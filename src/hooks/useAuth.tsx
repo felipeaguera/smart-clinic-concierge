@@ -1,4 +1,4 @@
-import { useState, useEffect, createContext, useContext, ReactNode, useCallback } from 'react';
+import { useState, useEffect, createContext, useContext, ReactNode, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import type { User, Session } from '@supabase/supabase-js';
 
@@ -14,58 +14,95 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+function timeout(ms: number) {
+  return new Promise<never>((_, reject) => {
+    const id = setTimeout(() => {
+      clearTimeout(id);
+      reject(new Error('Timeout ao verificar permissões'));
+    }, ms);
+  });
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
+  const roleCheckIdRef = useRef(0);
+
   const checkAdminRole = useCallback(async (userId: string) => {
+    const checkId = ++roleCheckIdRef.current;
+    setIsLoading(true);
+
     try {
-      const { data, error } = await supabase
+      const roleQuery = supabase
         .from('user_roles')
         .select('role')
         .eq('user_id', userId)
         .eq('role', 'admin')
         .maybeSingle();
 
-      setIsAdmin(!!data && !error);
-    } catch {
+      const { data, error } = await Promise.race([roleQuery, timeout(7000)]);
+
+      // Se houver uma verificação mais recente em andamento, ignora este resultado
+      if (checkId !== roleCheckIdRef.current) return;
+
+      if (error) {
+        setIsAdmin(false);
+        return;
+      }
+
+      setIsAdmin(!!data);
+    } catch (err) {
+      if (checkId !== roleCheckIdRef.current) return;
+      console.warn('[auth] Falha ao verificar role admin:', err);
       setIsAdmin(false);
     } finally {
+      if (checkId !== roleCheckIdRef.current) return;
       setIsLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    // Listener primeiro (evita perder eventos)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session);
       setUser(session?.user ?? null);
+
       if (session?.user) {
-        checkAdminRole(session.user.id);
+        setIsLoading(true);
+        // Use setTimeout para evitar deadlock (não chamar supabase direto no callback)
+        setTimeout(() => {
+          checkAdminRole(session.user.id);
+        }, 0);
       } else {
+        // Invalida verificações pendentes
+        roleCheckIdRef.current++;
+        setIsAdmin(false);
         setIsLoading(false);
       }
     });
 
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
+    // Sessão inicial
+    (async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
         setSession(session);
         setUser(session?.user ?? null);
-        
+
         if (session?.user) {
-          // Use setTimeout to avoid Supabase deadlock
-          setTimeout(() => {
-            checkAdminRole(session.user.id);
-          }, 0);
+          setIsLoading(true);
+          await checkAdminRole(session.user.id);
         } else {
-          setIsAdmin(false);
           setIsLoading(false);
         }
+      } catch (err) {
+        console.warn('[auth] Falha ao obter sessão inicial:', err);
+        setIsAdmin(false);
+        setIsLoading(false);
       }
-    );
+    })();
 
     return () => subscription.unsubscribe();
   }, [checkAdminRole]);
@@ -76,13 +113,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error) {
       setIsLoading(false);
     }
-    // Se não houver erro, o onAuthStateChange vai cuidar de setar isLoading = false
+    // Se não houver erro, o onAuthStateChange + checkAdminRole cuidam do restante
     return { error: error as Error | null };
   };
 
   const signUp = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signUp({ 
-      email, 
+    const { error } = await supabase.auth.signUp({
+      email,
       password,
       options: {
         emailRedirectTo: `${window.location.origin}/`
@@ -93,7 +130,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = async () => {
     setIsLoading(true);
-    await supabase.auth.signOut();
+    try {
+      await supabase.auth.signOut();
+    } finally {
+      // onAuthStateChange deve executar, mas garantimos que não fica preso
+      setIsLoading(false);
+    }
   };
 
   return (

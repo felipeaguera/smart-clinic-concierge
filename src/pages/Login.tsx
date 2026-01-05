@@ -63,15 +63,6 @@ export default function Login() {
     }
   };
 
-  // Se ainda está verificando auth, mostra loading
-  if (isLoading && user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <Card className="w-full max-w-md glass-card">
@@ -108,8 +99,8 @@ export default function Login() {
                 disabled={isSubmitting}
               />
             </div>
-            <Button type="submit" className="w-full" disabled={isSubmitting}>
-              {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            <Button type="submit" className="w-full" disabled={isSubmitting || isLoading}>
+              {(isSubmitting || isLoading) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {isSignUp ? 'Criar conta' : 'Entrar'}
             </Button>
           </form>
