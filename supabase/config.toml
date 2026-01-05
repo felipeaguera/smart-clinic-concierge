@@ -1,1 +1,7 @@
 project_id = "vyyyunltcxwqafdhytxs"
+
+[functions.agenda-disponibilidade]
+verify_jwt = false
+
+[functions.agenda-reservar]
+verify_jwt = false
