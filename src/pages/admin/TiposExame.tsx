@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Dialog,
   DialogContent,
@@ -38,6 +39,8 @@ interface ExamType {
   categoria: string;
   duracao_minutos: number;
   ativo: boolean;
+  preparo: string | null;
+  orientacoes: string | null;
   created_at: string;
 }
 
@@ -53,6 +56,8 @@ export default function TiposExame() {
   const [nome, setNome] = useState('');
   const [categoria, setCategoria] = useState('');
   const [duracao, setDuracao] = useState('');
+  const [preparo, setPreparo] = useState('');
+  const [orientacoes, setOrientacoes] = useState('');
   const [ativo, setAtivo] = useState(true);
   const [search, setSearch] = useState('');
   const { toast } = useToast();
@@ -71,17 +76,34 @@ export default function TiposExame() {
   });
 
   const mutation = useMutation({
-    mutationFn: async (data: { nome: string; categoria: string; duracao_minutos: number; ativo: boolean; id?: string }) => {
+    mutationFn: async (data: {
+      nome: string;
+      categoria: string;
+      duracao_minutos: number;
+      ativo: boolean;
+      preparo: string | null;
+      orientacoes: string | null;
+      id?: string;
+    }) => {
+      const payload = {
+        nome: data.nome,
+        categoria: data.categoria,
+        duracao_minutos: data.duracao_minutos,
+        ativo: data.ativo,
+        preparo: data.preparo || null,
+        orientacoes: data.orientacoes || null,
+      };
+
       if (data.id) {
         const { error } = await supabase
           .from('exam_types')
-          .update({ nome: data.nome, categoria: data.categoria, duracao_minutos: data.duracao_minutos, ativo: data.ativo })
+          .update(payload)
           .eq('id', data.id);
         if (error) throw error;
       } else {
         const { error } = await supabase
           .from('exam_types')
-          .insert({ nome: data.nome, categoria: data.categoria, duracao_minutos: data.duracao_minutos, ativo: data.ativo });
+          .insert(payload);
         if (error) throw error;
       }
     },
@@ -112,6 +134,8 @@ export default function TiposExame() {
     setNome('');
     setCategoria('');
     setDuracao('');
+    setPreparo('');
+    setOrientacoes('');
     setAtivo(true);
   };
 
@@ -120,22 +144,42 @@ export default function TiposExame() {
     setNome(exam.nome);
     setCategoria(exam.categoria);
     setDuracao(String(exam.duracao_minutos));
+    setPreparo(exam.preparo || '');
+    setOrientacoes(exam.orientacoes || '');
     setAtivo(exam.ativo);
     setIsOpen(true);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!nome.trim() || !categoria || !duracao) {
-      toast({ title: 'Erro', description: 'Preencha todos os campos', variant: 'destructive' });
+    if (!nome.trim() || !categoria) {
+      toast({ title: 'Erro', description: 'Preencha os campos obrigatórios', variant: 'destructive' });
       return;
     }
-    const duracaoNum = parseInt(duracao, 10);
-    if (isNaN(duracaoNum) || duracaoNum <= 0) {
-      toast({ title: 'Erro', description: 'Duração deve ser um número positivo', variant: 'destructive' });
-      return;
+
+    // Validar duração apenas para consulta e ultrassom
+    let duracaoNum = 0;
+    if (categoria !== 'laboratorio') {
+      if (!duracao) {
+        toast({ title: 'Erro', description: 'Preencha a duração do exame', variant: 'destructive' });
+        return;
+      }
+      duracaoNum = parseInt(duracao, 10);
+      if (isNaN(duracaoNum) || duracaoNum <= 0) {
+        toast({ title: 'Erro', description: 'Duração deve ser um número positivo', variant: 'destructive' });
+        return;
+      }
     }
-    mutation.mutate({ nome, categoria, duracao_minutos: duracaoNum, ativo, id: editingExam?.id });
+
+    mutation.mutate({
+      nome,
+      categoria,
+      duracao_minutos: duracaoNum,
+      ativo,
+      preparo: preparo.trim() || null,
+      orientacoes: orientacoes.trim() || null,
+      id: editingExam?.id,
+    });
   };
 
   const filteredExams = examTypes?.filter(
@@ -146,6 +190,8 @@ export default function TiposExame() {
 
   const getCategoriaLabel = (value: string) =>
     CATEGORIAS.find((c) => c.value === value)?.label || value;
+
+  const showDuracao = categoria !== 'laboratorio';
 
   return (
     <AdminLayout title="Tipos de Exame">
@@ -159,11 +205,12 @@ export default function TiposExame() {
                 Novo Tipo de Exame
               </Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>{editingExam ? 'Editar Tipo de Exame' : 'Novo Tipo de Exame'}</DialogTitle>
               </DialogHeader>
               <form onSubmit={handleSubmit} className="space-y-4">
+                {/* 1. Nome do exame */}
                 <div className="space-y-2">
                   <Label htmlFor="nome">Nome</Label>
                   <Input
@@ -173,6 +220,8 @@ export default function TiposExame() {
                     placeholder="Ultrassom Abdominal"
                   />
                 </div>
+
+                {/* 2. Categoria */}
                 <div className="space-y-2">
                   <Label htmlFor="categoria">Categoria</Label>
                   <Select value={categoria} onValueChange={setCategoria}>
@@ -188,21 +237,52 @@ export default function TiposExame() {
                     </SelectContent>
                   </Select>
                 </div>
+
+                {/* 3. Duração (apenas para consulta e ultrassom) */}
+                {showDuracao && (
+                  <div className="space-y-2">
+                    <Label htmlFor="duracao">Duração (minutos)</Label>
+                    <Input
+                      id="duracao"
+                      type="number"
+                      min="1"
+                      value={duracao}
+                      onChange={(e) => setDuracao(e.target.value)}
+                      placeholder="30"
+                    />
+                  </div>
+                )}
+
+                {/* 4. Preparo do exame */}
                 <div className="space-y-2">
-                  <Label htmlFor="duracao">Duração (minutos)</Label>
-                  <Input
-                    id="duracao"
-                    type="number"
-                    min="1"
-                    value={duracao}
-                    onChange={(e) => setDuracao(e.target.value)}
-                    placeholder="30"
+                  <Label htmlFor="preparo">Preparo do exame</Label>
+                  <Textarea
+                    id="preparo"
+                    value={preparo}
+                    onChange={(e) => setPreparo(e.target.value)}
+                    placeholder="Ex: Jejum de 6 horas. Água liberada."
+                    rows={3}
                   />
                 </div>
+
+                {/* 5. Orientações ao paciente */}
+                <div className="space-y-2">
+                  <Label htmlFor="orientacoes">Orientações ao paciente</Label>
+                  <Textarea
+                    id="orientacoes"
+                    value={orientacoes}
+                    onChange={(e) => setOrientacoes(e.target.value)}
+                    placeholder="Ex: Trazer exames anteriores, se houver."
+                    rows={3}
+                  />
+                </div>
+
+                {/* 6. Status (Ativo/Inativo) */}
                 <div className="flex items-center gap-2">
                   <Switch id="ativo" checked={ativo} onCheckedChange={setAtivo} />
                   <Label htmlFor="ativo">Ativo</Label>
                 </div>
+
                 <div className="flex gap-2 justify-end">
                   <Button type="button" variant="outline" onClick={handleClose}>
                     Cancelar
@@ -257,7 +337,9 @@ export default function TiposExame() {
                       <TableRow key={exam.id}>
                         <TableCell className="font-medium">{exam.nome}</TableCell>
                         <TableCell>{getCategoriaLabel(exam.categoria)}</TableCell>
-                        <TableCell>{exam.duracao_minutos} min</TableCell>
+                        <TableCell>
+                          {exam.categoria === 'laboratorio' ? '-' : `${exam.duracao_minutos} min`}
+                        </TableCell>
                         <TableCell>
                           <Switch
                             checked={exam.ativo}
