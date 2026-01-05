@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
 import { ProtectedRoute } from "@/components/admin/ProtectedRoute";
 import Login from "./pages/Login";
+import Atendimento from "./pages/Atendimento";
 import Medicos from "./pages/admin/Medicos";
 import TiposExame from "./pages/admin/TiposExame";
 import RegrasAtendimento from "./pages/admin/RegrasAtendimento";
@@ -23,7 +24,7 @@ const App = () => (
       <BrowserRouter>
         <AuthProvider>
           <Routes>
-            <Route path="/" element={<Navigate to="/admin/medicos" replace />} />
+            <Route path="/" element={<Atendimento />} />
             <Route path="/login" element={<Login />} />
             <Route
               path="/admin/medicos"
