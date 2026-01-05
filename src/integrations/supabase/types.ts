@@ -132,6 +132,8 @@ export type Database = {
           duracao_minutos: number
           id: string
           nome: string
+          orientacoes: string | null
+          preparo: string | null
         }
         Insert: {
           ativo?: boolean
@@ -140,6 +142,8 @@ export type Database = {
           duracao_minutos: number
           id?: string
           nome: string
+          orientacoes?: string | null
+          preparo?: string | null
         }
         Update: {
           ativo?: boolean
@@ -148,6 +152,8 @@ export type Database = {
           duracao_minutos?: number
           id?: string
           nome?: string
+          orientacoes?: string | null
+          preparo?: string | null
         }
         Relationships: []
       }
