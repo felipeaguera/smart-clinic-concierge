@@ -13,6 +13,8 @@ REGRAS ABSOLUTAS:
 2. Você NUNCA agenda sem confirmação explícita do paciente
 3. Toda disponibilidade vem EXCLUSIVAMENTE das funções de agenda
 4. Exames de LABORATÓRIO não usam agendamento - apenas oriente sobre preparo
+5. Você NUNCA inventa ou calcula valores/preços - não existe tabela de preços no sistema
+6. SEMPRE responda ao paciente - NUNCA deixe o chat em silêncio
 
 SUAS CAPACIDADES:
 - Atender pacientes com cordialidade
@@ -20,6 +22,20 @@ SUAS CAPACIDADES:
 - Informar sobre tipos de exames disponíveis
 - Auxiliar no agendamento de CONSULTAS e ULTRASSOM
 - Orientar sobre preparo de exames
+- Informar detalhes dos exames (nome, duração, preparo, orientações)
+
+QUANDO O PACIENTE PEDIR ORÇAMENTO/VALOR/PREÇO:
+1. NUNCA tente calcular ou inventar valores
+2. Informe as informações que você TEM do exame:
+   - Nome do exame
+   - Duração aproximada (se disponível)
+   - Preparo necessário (se houver)
+   - Orientações ao paciente (se houver)
+3. Depois, SEMPRE ofereça duas opções claras:
+   "Para informações sobre valores, posso:
+   1️⃣ Verificar horários disponíveis para agendamento
+   2️⃣ Encaminhar você para um atendente humano que pode informar os valores"
+4. Aguarde a escolha do paciente
 
 FLUXO DE AGENDAMENTO (consulta/ultrassom):
 1. Identificar o exame desejado
@@ -33,16 +49,18 @@ FLUXO DE AGENDAMENTO (consulta/ultrassom):
 
 ENCAMINHAMENTO PARA HUMANO:
 Se o paciente pedir para falar com atendente, tiver dúvida clínica, pedir encaixe/exceção, 
-ou se o exame não for reconhecido, responda:
+pedir valores/orçamento e escolher falar com humano, ou se o exame não for reconhecido:
+Use a função 'encaminhar_humano' e responda:
 "Entendo. Vou encaminhar você para um atendente humano. Um momento, por favor."
-E pare de responder sobre o assunto.
 
 INFORMAÇÕES DISPONÍVEIS:
 - Lista de médicos e suas especialidades
-- Tipos de exames e durações
+- Tipos de exames com: nome, categoria, duração, preparo e orientações
 - Regras de atendimento por médico
+- NÃO há tabela de preços disponível
 
-Seja sempre cordial, clara e objetiva. Use português brasileiro.`;
+Seja sempre cordial, clara e objetiva. Use português brasileiro.
+IMPORTANTE: Sempre dê uma resposta ao paciente, nunca deixe em silêncio.`;
 
 interface Message {
   role: "user" | "assistant" | "system";
@@ -80,19 +98,36 @@ serve(async (req) => {
     // Fetch available data for context
     const [doctorsResult, examTypesResult] = await Promise.all([
       supabase.from("doctors").select("id, nome, especialidade").eq("ativo", true),
-      supabase.from("exam_types").select("id, nome, categoria, duracao_minutos").eq("ativo", true)
+      supabase.from("exam_types").select("id, nome, categoria, duracao_minutos, preparo, orientacoes").eq("ativo", true)
     ]);
 
     const doctors = doctorsResult.data || [];
     const examTypes = examTypesResult.data || [];
 
-    // Build context information
+    // Build context information with exam details
+    const examTypesInfo = examTypes.map(e => {
+      let info = `- ${e.nome} (${e.categoria}`;
+      if (e.categoria !== 'laboratorio' && e.duracao_minutos) {
+        info += `, ${e.duracao_minutos}min`;
+      }
+      info += `) [ID: ${e.id}]`;
+      if (e.preparo) {
+        info += `\n  Preparo: ${e.preparo}`;
+      }
+      if (e.orientacoes) {
+        info += `\n  Orientações: ${e.orientacoes}`;
+      }
+      return info;
+    }).join("\n");
+
     const contextInfo = `
 MÉDICOS DISPONÍVEIS:
 ${doctors.map(d => `- ${d.nome} (${d.especialidade}) [ID: ${d.id}]`).join("\n")}
 
-TIPOS DE EXAME:
-${examTypes.map(e => `- ${e.nome} (${e.categoria}, ${e.duracao_minutos}min) [ID: ${e.id}]`).join("\n")}
+TIPOS DE EXAME (com preparo e orientações):
+${examTypesInfo}
+
+IMPORTANTE: Não há tabela de preços cadastrada. Para valores, encaminhar ao atendente humano.
 
 ${context ? `CONTEXTO DA CONVERSA ATUAL:
 - Médico selecionado: ${context.selectedDoctorId || "nenhum"}
