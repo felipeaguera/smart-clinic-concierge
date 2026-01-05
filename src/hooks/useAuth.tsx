@@ -1,4 +1,4 @@
-import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
+import { useState, useEffect, createContext, useContext, ReactNode, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import type { User, Session } from '@supabase/supabase-js';
 
@@ -20,36 +20,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAdmin, setIsAdmin] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        checkAdminRole(session.user.id);
-      } else {
-        setIsLoading(false);
-      }
-    });
-
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        if (session?.user) {
-          await checkAdminRole(session.user.id);
-        } else {
-          setIsAdmin(false);
-          setIsLoading(false);
-        }
-      }
-    );
-
-    return () => subscription.unsubscribe();
-  }, []);
-
-  const checkAdminRole = async (userId: string) => {
+  const checkAdminRole = useCallback(async (userId: string) => {
     try {
       const { data, error } = await supabase
         .from('user_roles')
@@ -64,19 +35,64 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+      if (session?.user) {
+        checkAdminRole(session.user.id);
+      } else {
+        setIsLoading(false);
+      }
+    });
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        setSession(session);
+        setUser(session?.user ?? null);
+        
+        if (session?.user) {
+          // Use setTimeout to avoid Supabase deadlock
+          setTimeout(() => {
+            checkAdminRole(session.user.id);
+          }, 0);
+        } else {
+          setIsAdmin(false);
+          setIsLoading(false);
+        }
+      }
+    );
+
+    return () => subscription.unsubscribe();
+  }, [checkAdminRole]);
 
   const signIn = async (email: string, password: string) => {
+    setIsLoading(true);
     const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) {
+      setIsLoading(false);
+    }
+    // Se não houver erro, o onAuthStateChange vai cuidar de setar isLoading = false
     return { error: error as Error | null };
   };
 
   const signUp = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signUp({ email, password });
+    const { error } = await supabase.auth.signUp({ 
+      email, 
+      password,
+      options: {
+        emailRedirectTo: `${window.location.origin}/`
+      }
+    });
     return { error: error as Error | null };
   };
 
   const signOut = async () => {
+    setIsLoading(true);
     await supabase.auth.signOut();
   };
 

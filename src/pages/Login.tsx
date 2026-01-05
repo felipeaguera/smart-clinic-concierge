@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
@@ -11,11 +11,18 @@ import { Loader2 } from 'lucide-react';
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSignUp, setIsSignUp] = useState(false);
-  const { signIn, signUp } = useAuth();
+  const { signIn, signUp, user, isAdmin, isLoading } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
+
+  // Redirecionar automaticamente se já estiver logado como admin
+  useEffect(() => {
+    if (!isLoading && user && isAdmin) {
+      navigate('/admin/medicos');
+    }
+  }, [user, isAdmin, isLoading, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -29,7 +36,7 @@ export default function Login() {
       return;
     }
 
-    setIsLoading(true);
+    setIsSubmitting(true);
 
     try {
       const { error } = isSignUp 
@@ -42,20 +49,28 @@ export default function Login() {
           description: error.message,
           variant: 'destructive',
         });
-      } else {
-        if (isSignUp) {
-          toast({
-            title: 'Conta criada!',
-            description: 'Solicite ao administrador para ativar seu acesso.',
-          });
-        } else {
-          navigate('/admin/medicos');
-        }
+        setIsSubmitting(false);
+      } else if (isSignUp) {
+        toast({
+          title: 'Conta criada!',
+          description: 'Solicite ao administrador para ativar seu acesso.',
+        });
+        setIsSubmitting(false);
       }
-    } finally {
-      setIsLoading(false);
+      // Se login bem-sucedido, o useEffect vai redirecionar quando isAdmin for true
+    } catch {
+      setIsSubmitting(false);
     }
   };
+
+  // Se ainda está verificando auth, mostra loading
+  if (isLoading && user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
@@ -79,7 +94,7 @@ export default function Login() {
                 placeholder="admin@clinica.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                disabled={isLoading}
+                disabled={isSubmitting}
               />
             </div>
             <div className="space-y-2">
@@ -90,11 +105,11 @@ export default function Login() {
                 placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                disabled={isLoading}
+                disabled={isSubmitting}
               />
             </div>
-            <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            <Button type="submit" className="w-full" disabled={isSubmitting}>
+              {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {isSignUp ? 'Criar conta' : 'Entrar'}
             </Button>
           </form>
