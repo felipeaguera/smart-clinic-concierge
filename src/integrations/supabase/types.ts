@@ -70,6 +70,7 @@ export type Database = {
           hora_fim: string
           hora_inicio: string
           id: string
+          tipo_atendimento: string
         }
         Insert: {
           created_at?: string
@@ -78,6 +79,7 @@ export type Database = {
           hora_fim: string
           hora_inicio: string
           id?: string
+          tipo_atendimento?: string
         }
         Update: {
           created_at?: string
@@ -86,6 +88,7 @@ export type Database = {
           hora_fim?: string
           hora_inicio?: string
           id?: string
+          tipo_atendimento?: string
         }
         Relationships: [
           {

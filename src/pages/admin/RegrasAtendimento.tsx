@@ -42,7 +42,14 @@ interface DoctorRule {
   dia_semana: number;
   hora_inicio: string;
   hora_fim: string;
+  tipo_atendimento: string;
 }
+
+const TIPOS_ATENDIMENTO = [
+  { value: 'consulta', label: 'Consulta' },
+  { value: 'ultrassom', label: 'Ultrassom' },
+  { value: 'ambos', label: 'Ambos' },
+];
 
 const DIAS_SEMANA = [
   { value: 0, label: 'Domingo' },
@@ -61,6 +68,7 @@ export default function RegrasAtendimento() {
   const [diaSemana, setDiaSemana] = useState<string>('');
   const [horaInicio, setHoraInicio] = useState('');
   const [horaFim, setHoraFim] = useState('');
+  const [tipoAtendimento, setTipoAtendimento] = useState('ambos');
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -93,17 +101,17 @@ export default function RegrasAtendimento() {
   });
 
   const mutation = useMutation({
-    mutationFn: async (data: { doctor_id: string; dia_semana: number; hora_inicio: string; hora_fim: string; id?: string }) => {
+    mutationFn: async (data: { doctor_id: string; dia_semana: number; hora_inicio: string; hora_fim: string; tipo_atendimento: string; id?: string }) => {
       if (data.id) {
         const { error } = await supabase
           .from('doctor_rules')
-          .update({ dia_semana: data.dia_semana, hora_inicio: data.hora_inicio, hora_fim: data.hora_fim })
+          .update({ dia_semana: data.dia_semana, hora_inicio: data.hora_inicio, hora_fim: data.hora_fim, tipo_atendimento: data.tipo_atendimento })
           .eq('id', data.id);
         if (error) throw error;
       } else {
         const { error } = await supabase
           .from('doctor_rules')
-          .insert({ doctor_id: data.doctor_id, dia_semana: data.dia_semana, hora_inicio: data.hora_inicio, hora_fim: data.hora_fim });
+          .insert({ doctor_id: data.doctor_id, dia_semana: data.dia_semana, hora_inicio: data.hora_inicio, hora_fim: data.hora_fim, tipo_atendimento: data.tipo_atendimento });
         if (error) throw error;
       }
     },
@@ -137,6 +145,7 @@ export default function RegrasAtendimento() {
     setDiaSemana('');
     setHoraInicio('');
     setHoraFim('');
+    setTipoAtendimento('ambos');
   };
 
   const handleEdit = (rule: DoctorRule) => {
@@ -144,6 +153,7 @@ export default function RegrasAtendimento() {
     setDiaSemana(String(rule.dia_semana));
     setHoraInicio(rule.hora_inicio);
     setHoraFim(rule.hora_fim);
+    setTipoAtendimento(rule.tipo_atendimento);
     setIsOpen(true);
   };
 
@@ -162,9 +172,12 @@ export default function RegrasAtendimento() {
       dia_semana: parseInt(diaSemana, 10),
       hora_inicio: horaInicio,
       hora_fim: horaFim,
+      tipo_atendimento: tipoAtendimento,
       id: editingRule?.id,
     });
   };
+
+  const getTipoLabel = (tipo: string) => TIPOS_ATENDIMENTO.find((t) => t.value === tipo)?.label || tipo;
 
   const getDiaLabel = (dia: number) => DIAS_SEMANA.find((d) => d.value === dia)?.label || '';
 
@@ -242,6 +255,21 @@ export default function RegrasAtendimento() {
                         />
                       </div>
                     </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="tipoAtendimento">Tipo de Atendimento</Label>
+                      <Select value={tipoAtendimento} onValueChange={setTipoAtendimento}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecione o tipo" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {TIPOS_ATENDIMENTO.map((tipo) => (
+                            <SelectItem key={tipo.value} value={tipo.value}>
+                              {tipo.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                     <div className="flex gap-2 justify-end">
                       <Button type="button" variant="outline" onClick={handleClose}>
                         Cancelar
@@ -268,13 +296,14 @@ export default function RegrasAtendimento() {
                         <TableHead>Dia da Semana</TableHead>
                         <TableHead>Hora Início</TableHead>
                         <TableHead>Hora Fim</TableHead>
+                        <TableHead>Tipo</TableHead>
                         <TableHead className="w-[120px]">Ações</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {rules?.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                          <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
                             Nenhuma regra cadastrada para este médico
                           </TableCell>
                         </TableRow>
@@ -284,6 +313,7 @@ export default function RegrasAtendimento() {
                             <TableCell className="font-medium">{getDiaLabel(rule.dia_semana)}</TableCell>
                             <TableCell>{rule.hora_inicio}</TableCell>
                             <TableCell>{rule.hora_fim}</TableCell>
+                            <TableCell>{getTipoLabel(rule.tipo_atendimento)}</TableCell>
                             <TableCell>
                               <div className="flex gap-1">
                                 <Button variant="ghost" size="sm" onClick={() => handleEdit(rule)}>
