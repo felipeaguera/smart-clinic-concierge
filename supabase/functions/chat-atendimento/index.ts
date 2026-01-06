@@ -53,14 +53,33 @@ Deseja agendar?"
 ═══════════════════════════════════════
 3. FLUXO DE AGENDAMENTO
 ═══════════════════════════════════════
-1. Após orçamento, perguntar: "Deseja agendar?"
-2. Se sim, perguntar data ou buscar próximo disponível
-3. Chamar buscar_disponibilidade
-4. Apresentar opções de forma assertiva:
-   "Para amanhã, tenho às 08:20 e às 09:00. Qual prefere?"
-5. AGUARDAR confirmação explícita ("pode marcar", "confirmo", "sim")
-6. SÓ ENTÃO chamar reservar_horario
-7. Após sucesso: informar data/horário + preparo + orientações
+
+PASSO 1: Identificar categoria do exame
+- ULTRASSOM: Usar buscar_disponibilidade_categoria (busca TODOS os médicos de ultrassom)
+- CONSULTA: Se médico não especificado, perguntar qual médico deseja
+
+PASSO 2: PARA ULTRASSONS
+1. Chamar buscar_disponibilidade_categoria com exam_type_id + data
+2. Receber lista de TODOS os médicos disponíveis com seus horários
+3. Apresentar de forma clara:
+   "Para amanhã, tenho os seguintes horários:
+   
+   Com Dr. Felipe Aguera:
+   - 08:00, 08:30, 09:00
+   
+   Com Dra. Maria:
+   - 14:00, 14:30, 15:00
+   
+   Qual prefere?"
+4. AGUARDAR escolha do paciente (médico + horário)
+5. Chamar reservar_horario com os dados escolhidos
+6. Após sucesso: informar data/horário + preparo + orientações
+
+PASSO 3: PARA CONSULTAS
+1. Se paciente especificou médico → usar buscar_disponibilidade direto
+2. Se não especificou → perguntar: "Temos consulta com Dr. X (especialidade) e Dr. Y (especialidade). Qual prefere?"
+3. Após escolha, buscar disponibilidade do médico escolhido
+4. Continuar fluxo normal de agendamento
 
 DATAS:
 - Usar DATA ATUAL do contexto como referência fixa
@@ -103,6 +122,8 @@ NUNCA encaminhar por:
 DURAÇÃO: Só informar se o paciente perguntar explicitamente.
 PREPARO/ORIENTAÇÕES: Só informar APÓS agendamento confirmado.
 LABORATÓRIO: Exames de laboratório NÃO usam agenda.
+ULTRASSOM: Sempre usar buscar_disponibilidade_categoria para mostrar TODOS os médicos.
+CONSULTA: Sempre perguntar qual médico se não especificado.
 `;
 
 interface Message {
@@ -339,7 +360,7 @@ ${examTypes.map(e => {
         type: "function",
         function: {
           name: "buscar_disponibilidade",
-          description: "Busca horários disponíveis para agendamento.",
+          description: "Busca horários disponíveis para agendamento com um médico específico. Usar apenas quando o paciente já escolheu o médico.",
           parameters: {
             type: "object",
             properties: {
@@ -348,6 +369,22 @@ ${examTypes.map(e => {
               data: { type: "string", description: "Data no formato YYYY-MM-DD" },
             },
             required: ["doctor_id", "exam_type_id", "data"],
+            additionalProperties: false,
+          },
+        },
+      },
+      {
+        type: "function",
+        function: {
+          name: "buscar_disponibilidade_categoria",
+          description: "Busca horários disponíveis de TODOS os médicos que atendem determinada categoria de exame. SEMPRE usar para ULTRASSONS.",
+          parameters: {
+            type: "object",
+            properties: {
+              exam_type_id: { type: "string", description: "UUID do tipo de exame" },
+              data: { type: "string", description: "Data no formato YYYY-MM-DD" },
+            },
+            required: ["exam_type_id", "data"],
             additionalProperties: false,
           },
         },
@@ -453,6 +490,16 @@ ${examTypes.map(e => {
           );
           result = await disponibilidadeResponse.json();
           console.log("Disponibilidade result:", result);
+        } else if (functionName === "buscar_disponibilidade_categoria") {
+          // Nova função que busca TODOS os médicos de uma categoria
+          const categoriaResponse = await fetch(
+            `${supabaseUrl}/functions/v1/agenda-disponibilidade-categoria?exam_type_id=${args.exam_type_id}&data=${args.data}`,
+            {
+              headers: { Authorization: `Bearer ${supabaseKey}` },
+            },
+          );
+          result = await categoriaResponse.json();
+          console.log("Disponibilidade categoria result:", result);
         } else if (functionName === "reservar_horario") {
           const reservarResponse = await fetch(`${supabaseUrl}/functions/v1/agenda-reservar`, {
             method: "POST",
