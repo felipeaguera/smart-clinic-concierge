@@ -17,7 +17,15 @@ interface Appointment {
   status: string;
   paciente_nome?: string | null;
   paciente_telefone?: string | null;
-  exam_types?: { nome: string };
+  exam_types?: { nome: string; duracao_minutos?: number };
+}
+
+interface DynamicSlot {
+  time: string;
+  endTime: string;
+  availableMinutes: number;
+  type: 'free' | 'occupied';
+  appointment?: Appointment;
 }
 
 interface AgendaGridProps {
@@ -25,7 +33,7 @@ interface AgendaGridProps {
   appointments: Appointment[];
   selectedDate: Date;
   tipoAtendimento: 'consulta' | 'ultrassom';
-  onSlotClick: (time: string) => void;
+  onSlotClick: (time: string, availableMinutes: number) => void;
   onAppointmentClick: (appointment: Appointment) => void;
   isLoading?: boolean;
 }
@@ -50,7 +58,7 @@ export function AgendaGrid({
   onAppointmentClick,
   isLoading,
 }: AgendaGridProps) {
-  // Gera os slots de 30 em 30 minutos baseado nas regras do médico
+  // Gera slots dinâmicos baseados nos agendamentos reais e regras do médico
   const slots = useMemo(() => {
     const dayOfWeek = selectedDate.getDay();
     
@@ -65,46 +73,76 @@ export function AgendaGrid({
       return [];
     }
 
-    const slotsList: { time: string; endTime: string }[] = [];
-    const slotDuration = 30; // minutos
-
+    // Encontra o range total de horários do dia
+    let dayStart = Infinity;
+    let dayEnd = 0;
+    
     for (const rule of rulesForDay) {
-      const startMinutes = timeToMinutes(rule.hora_inicio);
-      const endMinutes = timeToMinutes(rule.hora_fim);
-
-      for (let m = startMinutes; m < endMinutes; m += slotDuration) {
-        const slotTime = minutesToTime(m);
-        const slotEndTime = minutesToTime(m + slotDuration);
-        
-        // Evita duplicatas
-        if (!slotsList.some((s) => s.time === slotTime)) {
-          slotsList.push({ time: slotTime, endTime: slotEndTime });
-        }
-      }
+      const start = timeToMinutes(rule.hora_inicio);
+      const end = timeToMinutes(rule.hora_fim);
+      if (start < dayStart) dayStart = start;
+      if (end > dayEnd) dayEnd = end;
     }
 
-    // Ordena por horário
-    slotsList.sort((a, b) => timeToMinutes(a.time) - timeToMinutes(b.time));
+    // Filtra agendamentos válidos (não cancelados) e ordena por hora_inicio
+    const validAppointments = appointments
+      .filter(apt => apt.status !== 'cancelado')
+      .sort((a, b) => timeToMinutes(a.hora_inicio) - timeToMinutes(b.hora_inicio));
 
-    return slotsList;
-  }, [doctorRules, selectedDate, tipoAtendimento]);
+    const dynamicSlots: DynamicSlot[] = [];
+    let cursor = dayStart;
 
-  // Verifica se um slot está ocupado
-  const getAppointmentForSlot = (slotTime: string, slotEndTime: string): Appointment | undefined => {
-    const slotStart = timeToMinutes(slotTime);
-    const slotEnd = timeToMinutes(slotEndTime);
-
-    return appointments.find((apt) => {
-      // Ignora cancelados na verificação de conflito visual
-      if (apt.status === 'cancelado') return false;
-      
+    for (const apt of validAppointments) {
       const aptStart = timeToMinutes(apt.hora_inicio);
       const aptEnd = timeToMinutes(apt.hora_fim);
 
-      // Verifica sobreposição
-      return aptStart < slotEnd && aptEnd > slotStart;
-    });
-  };
+      // Se há um espaço livre antes deste agendamento
+      if (cursor < aptStart) {
+        const freeMinutes = aptStart - cursor;
+        dynamicSlots.push({
+          time: minutesToTime(cursor),
+          endTime: minutesToTime(aptStart),
+          availableMinutes: freeMinutes,
+          type: 'free',
+        });
+      }
+
+      // Adiciona o slot ocupado
+      dynamicSlots.push({
+        time: apt.hora_inicio,
+        endTime: apt.hora_fim,
+        availableMinutes: 0,
+        type: 'occupied',
+        appointment: apt,
+      });
+
+      // Move o cursor para o fim deste agendamento
+      cursor = Math.max(cursor, aptEnd);
+    }
+
+    // Se sobrou tempo no final do dia
+    if (cursor < dayEnd) {
+      const freeMinutes = dayEnd - cursor;
+      dynamicSlots.push({
+        time: minutesToTime(cursor),
+        endTime: minutesToTime(dayEnd),
+        availableMinutes: freeMinutes,
+        type: 'free',
+      });
+    }
+
+    // Se não há agendamentos, todo o dia está livre
+    if (validAppointments.length === 0 && dayStart < dayEnd) {
+      dynamicSlots.push({
+        time: minutesToTime(dayStart),
+        endTime: minutesToTime(dayEnd),
+        availableMinutes: dayEnd - dayStart,
+        type: 'free',
+      });
+    }
+
+    return dynamicSlots;
+  }, [doctorRules, appointments, selectedDate, tipoAtendimento]);
 
   if (isLoading) {
     return (
@@ -127,21 +165,18 @@ export function AgendaGrid({
 
   return (
     <div className="space-y-2">
-      {slots.map((slot) => {
-        const appointment = getAppointmentForSlot(slot.time, slot.endTime);
-        const isAvailable = !appointment;
-
-        return (
-          <AgendaSlot
-            key={slot.time}
-            time={slot.time}
-            isAvailable={isAvailable}
-            appointment={appointment}
-            onClick={() => isAvailable && onSlotClick(slot.time)}
-            onAppointmentClick={onAppointmentClick}
-          />
-        );
-      })}
+      {slots.map((slot, index) => (
+        <AgendaSlot
+          key={`${slot.time}-${index}`}
+          time={slot.time}
+          endTime={slot.endTime}
+          availableMinutes={slot.availableMinutes}
+          isAvailable={slot.type === 'free'}
+          appointment={slot.appointment}
+          onClick={() => slot.type === 'free' && onSlotClick(slot.time, slot.availableMinutes)}
+          onAppointmentClick={onAppointmentClick}
+        />
+      ))}
     </div>
   );
 }
