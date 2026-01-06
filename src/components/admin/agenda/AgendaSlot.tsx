@@ -8,7 +8,7 @@ interface Appointment {
   hora_fim: string;
   status: string;
   paciente_nome?: string | null;
-  exam_types?: { nome: string; duracao_minutos?: number };
+  exam_types?: { id: string; nome: string; duracao_minutos: number };
 }
 
 interface AgendaSlotProps {

@@ -17,7 +17,7 @@ interface Appointment {
   status: string;
   paciente_nome?: string | null;
   paciente_telefone?: string | null;
-  exam_types?: { nome: string; duracao_minutos?: number };
+  exam_types?: { id: string; nome: string; duracao_minutos: number };
 }
 
 interface DynamicSlot {
