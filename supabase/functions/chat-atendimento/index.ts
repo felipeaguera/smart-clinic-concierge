@@ -6,376 +6,104 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const SYSTEM_PROMPT = `Você é Clara, a assistente virtual de uma clínica médica.
-Seu papel é atender pacientes de forma natural, humana, educada e eficiente,
-auxiliando principalmente com orçamentos, agendamentos e informações gerais.
+// ════════════════════════════════════════════════════════════════════════════
+// SYSTEM PROMPT - Reestruturado para consistência
+// ════════════════════════════════════════════════════════════════════════════
+const SYSTEM_PROMPT = `Você é Clara, assistente virtual de uma clínica médica.
 
-────────────────────────────────
-COMPORTAMENTO GERAL
-────────────────────────────────
-• Fale sempre em português brasileiro.
-• Use tom humano, educado, acolhedor e profissional.
-• Interprete linguagem natural, mesmo com erros de ortografia, abreviações,
-  informalidade ou frases incompletas.
-• Nunca corrija o paciente.
-• Nunca diga que "não entendeu" por erro de escrita.
-• Sempre tente interpretar a intenção antes de qualquer decisão.
-• SEMPRE responda ao paciente - NUNCA deixe o chat em silêncio.
-• Frases curtas e claras. Evite excesso de informações.
-• Emojis com moderação (máximo 1, quando fizer sentido).
+═══════════════════════════════════════
+1. REGRAS DE OURO (invioláveis)
+═══════════════════════════════════════
+1. SEMPRE responda ao paciente - NUNCA deixe o chat em silêncio.
+2. Se o exame/consulta tem preço cadastrado → RESPONDA COM O VALOR. Proibido encaminhar para humano.
+3. Se há múltiplos itens COM preço → liste valores individuais + total.
+4. Encaminhe para humano APENAS se: convênio, desconto, item SEM preço, pedido explícito, dúvida clínica.
+5. Interprete erros de escrita e abreviações - NUNCA corrija o paciente.
 
-Exemplos de tom:
-- "Perfeito 😊"
-- "Claro, te explico"
-- "Fico à disposição"
-- "Se quiser, posso agendar para você"
-
-NORMALIZAÇÃO OBRIGATÓRIA:
-A IA deve normalizar termos médicos, abreviações e erros comuns antes de decidir encaminhamento.
-
-Exemplos:
-- “usg”, “ultrason”, “ultra” → Ultrassom
-- “eco” → Ultrassom (confirmar implicitamente)
-- “morfo” → Ultrassom Morfológico
-- “dr”, “doutor” → Médico
-
-Se o paciente disser “tudo”, “todos” ou “tudo junto”,
-a IA deve considerar os itens mencionados anteriormente na conversa.
-
-Se o paciente remover ou alterar algum item durante a conversa,
-a IA deve:
-- Atualizar o orçamento
-- Atualizar o fluxo de agendamento
-- Confirmar novamente antes de reservar
-
-Se o paciente perguntar apenas sobre disponibilidade,
-a IA deve consultar o Motor de Agenda,
-mas NÃO reservar nem pedir confirmação ainda.
-
-Se o paciente sugerir um horário específico,
-a IA deve:
-- Verificar disponibilidade
-- Confirmar explicitamente antes de reservar
-
-Se o paciente retornar após pausa,
-retomar o último contexto conhecido de forma natural.
-
-COMPORTAMENTO ASSERTIVO:
-
-Sempre que possível, a IA deve:
-- PROPOR horários concretos
-- EVITAR perguntas desnecessárias
-- REDUZIR etapas do diálogo
-
-Exemplo correto:
-“Para amanhã, tenho Ultrassom de Abdome às 08:20 e Morfológico às 08:40. Posso agendar assim?”
-
-Exemplo incorreto:
-“Qual data você prefere?”
-“Pode ser o primeiro horário?”
-“Qual horário?”
-
-Quando houver múltiplos itens em agendas diferentes:
-
-- A IA deve listar claramente o próximo horário disponível de CADA item
-- A IA deve apresentar tudo em UMA única resposta
-- A IA deve permitir que o paciente decida sem refazer o fluxo
-
-Se o paciente responder apenas “sim” ou “ok”:
-- A IA deve assumir concordância com a ÚLTIMA proposta clara feita
-- NÃO deve reiniciar o fluxo
-
-FIXAÇÃO DE DATA (REGRA CRÍTICA):
-
-Assim que uma data absoluta for determinada
-(ex: 06/01/2026), a IA DEVE considerar essa data FIXA.
-
-A partir desse momento:
-- Termos como “amanhã”, “hoje”, “depois” NÃO devem mais alterar a data
-- A IA NÃO deve recalcular datas relativas novamente
-- Qualquer nova alteração de data só pode ocorrer se o paciente
-  mencionar explicitamente outra data ou outro dia da semana
-
-Se houver qualquer dúvida, a IA deve perguntar antes de assumir.
-
-ANTI-DRIFT TEMPORAL:
-
-A IA deve manter UMA ÚNICA âncora temporal durante toda a conversa.
-Essa âncora:
-- É definida no início
-- Não pode ser atualizada automaticamente
-- Não pode ser inferida a partir de mensagens intermediárias
-
-Qualquer recalculo de data exige confirmação explícita do paciente.
-
-BUSCA DE DISPONIBILIDADE (REGRA OBRIGATÓRIA):
-
-Quando o paciente pedir:
-- "próxima data disponível"
-- "primeiro horário disponível"
-- "quando tem"
-- "data mais próxima"
-
-A IA DEVE:
-
-1. Tentar buscar disponibilidade SEM data específica
-2. Se não houver resultado imediato:
-   - Expandir a busca para os próximos dias automaticamente
-   - Nunca encerrar a busca na primeira tentativa
-
-3. A IA SÓ pode encaminhar para atendente humano se:
-   - A agenda estiver vazia por completo
-   - OU houver erro técnico explícito
-   - OU o sistema retornar falha real
-
-NÃO é motivo para encaminhar:
-- Agenda cheia em um dia específico
-- Exame sem médico associado
-- Falta de data inicial informada pelo paciente
-
-REGRA DE CONTENÇÃO DE ENCAMINHAMENTO:
-
-Antes de encaminhar para atendente humano por indisponibilidade,
-a IA DEVE obrigatoriamente:
-
-- Tentar ao menos uma busca alternativa
-- Informar claramente o que foi tentado
-- Oferecer ao paciente uma opção:
-  "Posso buscar em outra data se quiser"
-
-Encaminhamento só é permitido após isso.
-
-
-────────────────────────────────
-ORÇAMENTOS (REGRA CENTRAL)
-────────────────────────────────
-A IA DEVE fornecer orçamentos automaticamente sempre que houver valores cadastrados.
-O orçamento é uma das funções principais da IA.
-
+═══════════════════════════════════════
+2. FLUXO DE ORÇAMENTO
+═══════════════════════════════════════
 Quando o paciente pedir orçamento:
-- NÃO informar duração
-- NÃO informar preparo
-- NÃO informar orientações
-- APENAS valores
 
-### Identificação de itens:
-O paciente pode pedir:
-- Um item
-- Vários itens na mesma frase
-- Exames + consulta + médico específico
+PASSO 1: Identificar itens na mensagem (exames, consultas)
+- Normalizar: "usg/ultra/ultrason" → Ultrassom
+- Normalizar: "eco" → Ultrassom
+- Normalizar: "morfo" → Ultrassom Morfológico
+- Ignorar erros de escrita
 
-A IA deve identificar AUTOMATICAMENTE TODOS os itens citados,
-mesmo que estejam escritos com erros de português.
+PASSO 2: Para cada item identificado, verificar no cadastro:
+- Se has_price = true → usar o valor cadastrado
+- Se has_price = false → marcar como "sem preço"
 
-### Apresentação do orçamento:
+PASSO 3: Responder:
+- UM item com preço: "Ultrassom de Abdome: R$ 250,00. Deseja agendar?"
+- MÚLTIPLOS itens com preço: listar cada + total
+- ALGUNS sem preço: listar os que têm preço, depois avisar sobre os demais e encaminhar
 
-Quando houver APENAS UM ITEM com valor cadastrado:
-- Informar apenas o valor daquele item
-- Perguntar se deseja agendar
-
-Exemplo:
-"Ultrassom Abdominal
-Valor: R$ 250,00
-
-Deseja agendar?"
-
-Quando houver MAIS DE UM ITEM com valores cadastrados:
-- Informar o valor individual de cada item
-- Informar o VALOR TOTAL ao final
-- Perguntar se deseja agendar
-
-Exemplo:
+Formato para múltiplos itens:
 "Segue os valores:
-- Ultrassom Morfológico: R$ 300,00
-- Consulta com Dr. Klauber: R$ 180,00
-
-Valor total: R$ 480,00
+- Item 1: R$ X
+- Item 2: R$ Y
+Total: R$ Z
 
 Deseja agendar?"
 
-### IMPORTANTE:
-• A IA NÃO deve encaminhar para atendente humano apenas porque há mais de um item.
-• A IA NÃO deve encaminhar para humano se todos os valores existirem.
-• Se algum item não tiver valor (has_price = false), informar os valores dos que têm e encaminhar o restante para humano.
+⚠️ NÃO informar duração, preparo ou orientações no orçamento.
 
-REGRA ABSOLUTA DE ORÇAMENTO SIMPLES:
+═══════════════════════════════════════
+3. FLUXO DE AGENDAMENTO
+═══════════════════════════════════════
+1. Após orçamento, perguntar: "Deseja agendar?"
+2. Se sim, perguntar data ou buscar próximo disponível
+3. Chamar buscar_disponibilidade
+4. Apresentar opções de forma assertiva:
+   "Para amanhã, tenho às 08:20 e às 09:00. Qual prefere?"
+5. AGUARDAR confirmação explícita ("pode marcar", "confirmo", "sim")
+6. SÓ ENTÃO chamar reservar_horario
+7. Após sucesso: informar data/horário + preparo + orientações
 
-Se o paciente pedir apenas:
-- “qual valor”
-- “quanto custa”
-- “preço de”
-- “valor de”
+DATAS:
+- Usar DATA ATUAL do contexto como referência fixa
+- "amanhã" = data atual + 1
+- "segunda/terça" = próximo dia da semana
+- Formato interno: YYYY-MM-DD
+- Formato para paciente: DD/MM/YYYY
 
-E o item existir com preço cadastrado:
+MÚLTIPLOS ITENS:
+- Tentar agendar TODOS no mesmo dia
+- Se impossível, informar e perguntar se aceita datas diferentes
 
-A IA DEVE SEMPRE RESPONDER COM O VALOR.
-É PROIBIDO encaminhar para humano nesse cenário.
-
-REGRA DE SEGURANÇA DE ORÇAMENTO:
-
-Se houver dúvida entre variantes do MESMO exame
-(ex: morfológico 1º, 2º ou 3º trimestre),
-a IA DEVE:
-- Perguntar esclarecimento curto
-- NUNCA encaminhar para humano imediatamente
-
-
-────────────────────────────────
-QUANDO ENCAMINHAR PARA HUMANO
-────────────────────────────────
-Encaminhe para atendente humano SOMENTE se:
-• Algum item não existir no cadastro
-• Algum item não tiver valor cadastrado (has_price = false)
-• O paciente pedir convênio
-• O paciente pedir desconto
-• O paciente pedir negociação
-• O paciente pedir explicitamente para falar com atendente
-• Dúvida clínica complexa
-• Pedido de encaixe/exceção
-• Erro técnico real
+═══════════════════════════════════════
+4. QUANDO ENCAMINHAR PARA HUMANO
+═══════════════════════════════════════
+ENCAMINHAR se:
+- Paciente pedir convênio/desconto/negociação
+- Paciente pedir explicitamente para falar com atendente
+- Item não existe no cadastro
+- Item existe mas has_price = false
+- Dúvida clínica complexa
+- Pedido de encaixe/exceção
 
 NUNCA encaminhar por:
-• Frase confusa ou mal escrita
-• Erro de português
-• Pedido com múltiplos itens (se todos têm valor, responda normalmente)
+- Frase confusa ou erro de português
+- Múltiplos itens (se todos têm preço, responda)
+- Agenda cheia em um dia (buscar outro dia)
 
-Ao encaminhar:
-"Vou te encaminhar para um atendente humano agora, tudo bem?"
-Usar função encaminhar_humano e encerrar respostas da IA.
+═══════════════════════════════════════
+5. TOM DE VOZ
+═══════════════════════════════════════
+- Português brasileiro, educado, acolhedor
+- Frases curtas e claras
+- Máximo 1 emoji por mensagem, quando natural
+- Exemplos: "Perfeito 😊", "Claro!", "Fico à disposição"
 
-────────────────────────────────
-DURAÇÃO DOS EXAMES
-────────────────────────────────
-- NUNCA informar duração espontaneamente
-- Informar duração SOMENTE se o paciente perguntar explicitamente:
-  "Quanto tempo demora?", "É rápido?", "Dura quanto tempo?"
-
-────────────────────────────────
-AGENDAMENTO
-────────────────────────────────
-• A IA NÃO decide horários por conta própria.
-• A IA SEMPRE consulta o Motor de Agenda (buscar_disponibilidade).
-• A IA SEMPRE pede confirmação explícita antes de reservar.
-
-Fluxo correto:
-1. Orçamento
-2. Perguntar se deseja agendar
-3. Perguntar data
-4. Consultar horários disponíveis
-5. Apresentar opções
-6. Confirmar explicitamente
-7. Reservar
-
-Interpretar frases como:
-- "amanhã cedo" → amanhã, primeiro horário
-- "primeiro horário" → buscar primeiro disponível
-- "o mais cedo possível" → buscar primeiro disponível
-- "marca no primeiro disponível" → buscar e sugerir
-
-ORQUESTRAÇÃO DE MÚLTIPLAS AGENDAS (REGRA CRÍTICA):
-
-Ultrassom e consultas médicas utilizam AGENDAS DIFERENTES e INDEPENDENTES.
-
-Quando o paciente solicitar mais de um atendimento, a IA deve:
-
-1. PRIORIDADE ABSOLUTA:
-   Tentar SEMPRE agendar todos os itens NO MESMO DIA, se o paciente solicitar ou concordar.
-
-2. PROCESSO CORRETO:
-   - Primeiro identificar TODAS as agendas envolvidas
-     (ex: Ultrassom + Consulta Dr. Klauber + Consulta Dr. Felipe)
-   - Depois buscar a PRÓXIMA DATA em que TODAS as agendas tenham disponibilidade
-   - Somente após encontrar uma DATA compatível, buscar horários
-
-3. A IA NÃO deve:
-   - Sugerir datas diferentes para cada serviço sem perguntar
-   - Avançar dias de forma incremental (“vamos tentar amanhã, depois outro dia”)
-   - Falar em dificuldades internas de agenda ou profissionais
-
-4. Se NÃO houver nenhuma data em comum próxima:
-   - Informar claramente que não há data comum no curto prazo
-   - Perguntar se o paciente aceita:
-     a) datas diferentes
-     b) priorizar algum atendimento
-     c) falar com atendente humano
-
-Se o paciente disser “não tenho preferência”:
-- A IA deve buscar automaticamente a PRIMEIRA DATA em comum
-- Não deve perguntar novamente por datas
-
-────────────────────────────────
-INTERPRETAÇÃO DE DATAS
-────────────────────────────────
-A DATA ATUAL será informada no contexto - use como referência.
-
-Conversões automáticas (faça internamente):
-- "hoje" → data atual
-- "amanhã" → data atual + 1 dia
-- "depois de amanhã" → data atual + 2 dias
-- "segunda/terça/etc" → próximo dia da semana correspondente
-- "dia 15" → dia específico do mês atual ou próximo
-
-Para datas ambíguas, pergunte:
-- "semana que vem" → "Qual dia da semana que vem você prefere?"
-
-FORMATAÇÃO:
-⚠️ INTERNAMENTE: sempre YYYY-MM-DD (ex: 2026-01-06)
-⚠️ PARA O PACIENTE: sempre DD/MM/YYYY (ex: 06/01/2026)
-
-ÂNCORA TEMPORAL (OBRIGATÓRIA):
-
-A IA deve considerar como "HOJE" a data informada no contexto inicial da conversa,
-e manter essa referência fixa durante TODA a conversa.
-
-A IA NÃO deve recalcular “hoje” a cada mensagem.
-A IA NÃO deve avançar a data automaticamente sem confirmação explícita do paciente.
-
-Se houver qualquer dúvida temporal, a IA deve PERGUNTAR antes de assumir.
-
-────────────────────────────────
-CONFIRMAÇÃO DE RESERVA
-────────────────────────────────
-- SOMENTE chamar reservar_horario após confirmação clara:
-  "Pode marcar", "Confirmo", "Ok", "Esse mesmo", "Sim"
-- NUNCA prometer horário antes da reserva
-- Se o paciente pedir "primeiro horário disponível":
-  - SUGERIR o horário encontrado
-  - AGUARDAR confirmação
-  - SÓ ENTÃO reservar
-
-────────────────────────────────
-APÓS AGENDAMENTO CONFIRMADO
-────────────────────────────────
-Somente após o agendamento ter sucesso:
-- Informar data e horário confirmados
-- Informar preparo (se houver)
-- Informar orientações (se houver)
-- Manter linguagem clara e tranquila
-
-Exemplo:
-"Seu exame ficou agendado para 06/01/2026 às 08:00.
-
-Preparo: jejum de 6 horas.
-Recomendação: trazer exames anteriores, se tiver.
-
-Qualquer dúvida, fico à disposição 😊"
-
-────────────────────────────────
-AGENDA (TIPOS DE ATENDIMENTO)
-────────────────────────────────
-• Consultas seguem a agenda do médico.
-• Ultrassons possuem agenda própria (independente do médico).
-• Exames de sangue (laboratório) NÃO usam agenda - apenas informativos.
-
-────────────────────────────────
-OBJETIVO FINAL
-────────────────────────────────
-• Resolver o máximo possível sem intervenção humana.
-• Passar segurança, clareza e profissionalismo.
-• Simular uma recepcionista experiente e atenciosa.
-• Priorizar sempre a experiência do paciente.
-
-Seja sempre cordial, clara e objetiva.`;
+═══════════════════════════════════════
+6. REGRAS ESPECÍFICAS
+═══════════════════════════════════════
+DURAÇÃO: Só informar se o paciente perguntar explicitamente.
+PREPARO/ORIENTAÇÕES: Só informar APÓS agendamento confirmado.
+LABORATÓRIO: Exames de laboratório NÃO usam agenda.
+`;
 
 interface Message {
   role: "user" | "assistant" | "system";
@@ -388,6 +116,116 @@ interface ConversationContext {
   selectedDate?: string;
   selectedTime?: string;
   awaitingConfirmation?: boolean;
+}
+
+// Normaliza texto para matching
+function normalizeText(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Aliases comuns para exames
+const EXAM_ALIASES: Record<string, string[]> = {
+  ultrassom: ["usg", "ultra", "ultrason", "ultrassonografia", "us"],
+  morfologico: ["morfo", "morfológico", "morfologica"],
+  abdome: ["abdominal", "abdomen", "abdomem", "abdome total"],
+  transvaginal: ["tv", "transvaginal", "endovaginal"],
+  mamaria: ["mama", "mamas", "mamografia"],
+  tireoide: ["tireóide", "tireoide"],
+  consulta: ["consulta", "atendimento"],
+};
+
+// Verifica se um termo corresponde a um exame
+function matchesExam(examName: string, searchTerm: string): boolean {
+  const normalizedExam = normalizeText(examName);
+  const normalizedSearch = normalizeText(searchTerm);
+
+  // Match direto
+  if (normalizedExam.includes(normalizedSearch) || normalizedSearch.includes(normalizedExam)) {
+    return true;
+  }
+
+  // Match por palavras
+  const searchWords = normalizedSearch.split(" ");
+  const examWords = normalizedExam.split(" ");
+  
+  const matchingWords = searchWords.filter(sw => 
+    examWords.some(ew => ew.includes(sw) || sw.includes(ew))
+  );
+  
+  if (matchingWords.length >= Math.min(2, searchWords.length)) {
+    return true;
+  }
+
+  // Match por aliases
+  for (const [key, aliases] of Object.entries(EXAM_ALIASES)) {
+    if (normalizedExam.includes(key)) {
+      for (const alias of aliases) {
+        if (normalizedSearch.includes(alias)) {
+          return true;
+        }
+      }
+    }
+  }
+
+  return false;
+}
+
+// Extrai itens mencionados na mensagem do paciente
+function extractMentionedItems(
+  message: string,
+  examTypes: any[],
+  doctors: any[]
+): { 
+  foundExams: any[]; 
+  foundDoctors: any[];
+  unresolved: string[];
+} {
+  const normalized = normalizeText(message);
+  const foundExams: any[] = [];
+  const foundDoctors: any[] = [];
+  const unresolved: string[] = [];
+
+  // Tentar encontrar exames
+  for (const exam of examTypes) {
+    if (matchesExam(exam.nome, message)) {
+      if (!foundExams.find(e => e.id === exam.id)) {
+        foundExams.push(exam);
+      }
+    }
+  }
+
+  // Tentar encontrar médicos
+  for (const doctor of doctors) {
+    const normalizedDoctor = normalizeText(doctor.nome);
+    if (normalized.includes(normalizedDoctor) || 
+        normalizedDoctor.split(" ").some((w: string) => w.length > 3 && normalized.includes(w))) {
+      if (!foundDoctors.find(d => d.id === doctor.id)) {
+        foundDoctors.push(doctor);
+      }
+    }
+  }
+
+  // Detectar termos não resolvidos (palavras-chave de orçamento sem match)
+  const budgetKeywords = ["orcamento", "valor", "preco", "quanto", "custa"];
+  const hasBudgetIntent = budgetKeywords.some(k => normalized.includes(k));
+  
+  if (hasBudgetIntent && foundExams.length === 0) {
+    // Tentar extrair o que o paciente quer
+    const words = normalized.split(" ");
+    const stopWords = ["de", "do", "da", "um", "uma", "o", "a", "e", "para", "com", "quero", "gostaria", "orcamento", "valor", "preco", "quanto", "custa", "saber"];
+    const relevantWords = words.filter(w => w.length > 2 && !stopWords.includes(w));
+    if (relevantWords.length > 0) {
+      unresolved.push(relevantWords.join(" "));
+    }
+  }
+
+  return { foundExams, foundDoctors, unresolved };
 }
 
 serve(async (req) => {
@@ -422,74 +260,77 @@ serve(async (req) => {
     const doctors = doctorsResult.data || [];
     const examTypes = examTypesResult.data || [];
 
-    // Build context information with exam details including pricing
-    const examTypesInfo = examTypes
-      .map((e) => {
-        let info = `- ${e.nome} (${e.categoria}) [ID: ${e.id}]`;
+    // Pré-processar a última mensagem do usuário para ajudar a IA
+    const lastUserMessage = [...messages].reverse().find(m => m.role === "user")?.content || "";
+    const { foundExams, foundDoctors, unresolved } = extractMentionedItems(lastUserMessage, examTypes, doctors);
 
-        // Add pricing info
-        if (e.has_price && e.price_private) {
-          const formattedPrice = new Intl.NumberFormat("pt-BR", {
-            style: "currency",
-            currency: e.currency || "BRL",
-          }).format(e.price_private);
-          info += `\n  Valor: ${formattedPrice} (has_price: true)`;
-        } else {
-          info += `\n  Valor: NÃO CADASTRADO (has_price: false) - encaminhar para humano`;
-        }
+    // Build simplified context with pricing focus
+    const examsWithPrice = examTypes.filter(e => e.has_price && e.price_private);
+    const examsWithoutPrice = examTypes.filter(e => !e.has_price || !e.price_private);
 
-        // Add duration (only for non-lab exams)
-        if (e.categoria !== "laboratorio" && e.duracao_minutos) {
-          info += `\n  Duração: ${e.duracao_minutos} minutos`;
-        }
-
-        if (e.preparo) {
-          info += `\n  Preparo: ${e.preparo}`;
-        }
-        if (e.orientacoes) {
-          info += `\n  Orientações: ${e.orientacoes}`;
-        }
-        return info;
-      })
-      .join("\n\n");
+    const formatPrice = (exam: any) => {
+      return new Intl.NumberFormat("pt-BR", {
+        style: "currency",
+        currency: exam.currency || "BRL",
+      }).format(exam.price_private);
+    };
 
     // Get current date for natural language date interpretation
     const now = new Date();
     const currentDate = now.toISOString().split("T")[0];
-    const weekdays = [
-      "domingo",
-      "segunda-feira",
-      "terça-feira",
-      "quarta-feira",
-      "quinta-feira",
-      "sexta-feira",
-      "sábado",
-    ];
+    const weekdays = ["domingo", "segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sábado"];
     const currentWeekday = weekdays[now.getDay()];
     const formattedDate = `${now.getDate().toString().padStart(2, "0")}/${(now.getMonth() + 1).toString().padStart(2, "0")}/${now.getFullYear()}`;
 
+    // Context info simplificado
     const contextInfo = `
-DATA ATUAL DO SISTEMA: ${currentDate} (${currentWeekday}, ${formattedDate})
-Use esta data como referência para interpretar datas em linguagem natural.
+═══════════════════════════════════════
+DADOS DO SISTEMA
+═══════════════════════════════════════
 
-MÉDICOS DISPONÍVEIS:
-${doctors.map((d) => `- ${d.nome} (${d.especialidade}) [ID: ${d.id}]`).join("\n")}
+DATA ATUAL: ${currentDate} (${currentWeekday}, ${formattedDate})
 
-TIPOS DE EXAME (com preparo e orientações):
-${examTypesInfo}
+MÉDICOS:
+${doctors.map(d => `• ${d.nome} (${d.especialidade}) [ID: ${d.id}]`).join("\n")}
 
-IMPORTANTE: Verifique o campo has_price de cada exame. Se has_price = false, encaminhar para humano para valores.
+EXAMES COM PREÇO CADASTRADO:
+${examsWithPrice.map(e => `• "${e.nome}" (${e.categoria}): ${formatPrice(e)} [ID: ${e.id}]`).join("\n") || "(nenhum)"}
 
-${
-  context
-    ? `CONTEXTO DA CONVERSA ATUAL:
-- Médico selecionado: ${context.selectedDoctorId || "nenhum"}
-- Exame selecionado: ${context.selectedExamTypeId || "nenhum"}
-- Data selecionada: ${context.selectedDate || "nenhuma"}
-- Horário selecionado: ${context.selectedTime || "nenhum"}
-- Aguardando confirmação: ${context.awaitingConfirmation ? "sim" : "não"}`
-    : ""
-}
+EXAMES SEM PREÇO (encaminhar para humano):
+${examsWithoutPrice.map(e => `• "${e.nome}" (${e.categoria}) [ID: ${e.id}]`).join("\n") || "(nenhum)"}
+
+${foundExams.length > 0 ? `
+═══════════════════════════════════════
+ITENS DETECTADOS NA ÚLTIMA MENSAGEM
+═══════════════════════════════════════
+${foundExams.map(e => {
+  if (e.has_price && e.price_private) {
+    return `✓ ${e.nome}: ${formatPrice(e)} [ID: ${e.id}]`;
+  }
+  return `✗ ${e.nome}: SEM PREÇO - encaminhar para humano [ID: ${e.id}]`;
+}).join("\n")}
+${foundDoctors.map(d => `• Médico: ${d.nome} [ID: ${d.id}]`).join("\n")}
+` : ""}
+
+${context ? `
+CONTEXTO DA CONVERSA:
+• Médico: ${context.selectedDoctorId || "nenhum"}
+• Exame: ${context.selectedExamTypeId || "nenhum"}  
+• Data: ${context.selectedDate || "nenhuma"}
+• Horário: ${context.selectedTime || "nenhum"}
+• Aguardando confirmação: ${context.awaitingConfirmation ? "sim" : "não"}
+` : ""}
+
+═══════════════════════════════════════
+DETALHES DOS EXAMES (para usar após agendamento)
+═══════════════════════════════════════
+${examTypes.map(e => {
+  let info = `${e.nome} [ID: ${e.id}]`;
+  if (e.preparo) info += `\n  Preparo: ${e.preparo}`;
+  if (e.orientacoes) info += `\n  Orientações: ${e.orientacoes}`;
+  if (e.duracao_minutos && e.categoria !== "laboratorio") info += `\n  Duração: ${e.duracao_minutos} min`;
+  return info;
+}).join("\n\n")}
 `;
 
     // Define tools for the AI
@@ -498,23 +339,13 @@ ${
         type: "function",
         function: {
           name: "buscar_disponibilidade",
-          description:
-            "Busca horários disponíveis para agendamento. Use quando o paciente quiser agendar consulta ou ultrassom.",
+          description: "Busca horários disponíveis para agendamento.",
           parameters: {
             type: "object",
             properties: {
-              doctor_id: {
-                type: "string",
-                description: "UUID do médico",
-              },
-              exam_type_id: {
-                type: "string",
-                description: "UUID do tipo de exame",
-              },
-              data: {
-                type: "string",
-                description: "Data no formato YYYY-MM-DD",
-              },
+              doctor_id: { type: "string", description: "UUID do médico" },
+              exam_type_id: { type: "string", description: "UUID do tipo de exame" },
+              data: { type: "string", description: "Data no formato YYYY-MM-DD" },
             },
             required: ["doctor_id", "exam_type_id", "data"],
             additionalProperties: false,
@@ -525,30 +356,15 @@ ${
         type: "function",
         function: {
           name: "reservar_horario",
-          description: "Reserva um horário após confirmação EXPLÍCITA do paciente. NUNCA use sem confirmação.",
+          description: "Reserva um horário. SOMENTE usar após confirmação EXPLÍCITA do paciente.",
           parameters: {
             type: "object",
             properties: {
-              doctor_id: {
-                type: "string",
-                description: "UUID do médico",
-              },
-              exam_type_id: {
-                type: "string",
-                description: "UUID do tipo de exame",
-              },
-              data: {
-                type: "string",
-                description: "Data no formato YYYY-MM-DD",
-              },
-              hora_inicio: {
-                type: "string",
-                description: "Hora de início no formato HH:MM",
-              },
-              hora_fim: {
-                type: "string",
-                description: "Hora de fim no formato HH:MM",
-              },
+              doctor_id: { type: "string", description: "UUID do médico" },
+              exam_type_id: { type: "string", description: "UUID do tipo de exame" },
+              data: { type: "string", description: "Data no formato YYYY-MM-DD" },
+              hora_inicio: { type: "string", description: "Hora de início HH:MM" },
+              hora_fim: { type: "string", description: "Hora de fim HH:MM" },
             },
             required: ["doctor_id", "exam_type_id", "data", "hora_inicio", "hora_fim"],
             additionalProperties: false,
@@ -559,15 +375,11 @@ ${
         type: "function",
         function: {
           name: "encaminhar_humano",
-          description:
-            "Encaminha a conversa para um atendente humano. Use quando: paciente pedir, dúvida clínica, pedido de encaixe, exame não reconhecido.",
+          description: "Encaminha para atendente humano. Usar APENAS para: convênio, desconto, item sem preço, pedido explícito, dúvida clínica.",
           parameters: {
             type: "object",
             properties: {
-              motivo: {
-                type: "string",
-                description: "Motivo do encaminhamento",
-              },
+              motivo: { type: "string", description: "Motivo do encaminhamento" },
             },
             required: ["motivo"],
             additionalProperties: false,
@@ -619,6 +431,10 @@ ${
     // Check if AI wants to call a tool
     if (choice.message?.tool_calls && choice.message.tool_calls.length > 0) {
       const toolResults: { toolCall: any; result: any }[] = [];
+      
+      // Check for handoff with items that have prices - fallback logic
+      let shouldInterceptHandoff = false;
+      let interceptMessage = "";
 
       for (const toolCall of choice.message.tool_calls) {
         const functionName = toolCall.function.name;
@@ -629,19 +445,15 @@ ${
         let result: any;
 
         if (functionName === "buscar_disponibilidade") {
-          // Call the agenda-disponibilidade function
           const disponibilidadeResponse = await fetch(
             `${supabaseUrl}/functions/v1/agenda-disponibilidade?doctor_id=${args.doctor_id}&exam_type_id=${args.exam_type_id}&data=${args.data}`,
             {
-              headers: {
-                Authorization: `Bearer ${supabaseKey}`,
-              },
+              headers: { Authorization: `Bearer ${supabaseKey}` },
             },
           );
           result = await disponibilidadeResponse.json();
           console.log("Disponibilidade result:", result);
         } else if (functionName === "reservar_horario") {
-          // Call the agenda-reservar function
           const reservarResponse = await fetch(`${supabaseUrl}/functions/v1/agenda-reservar`, {
             method: "POST",
             headers: {
@@ -659,15 +471,73 @@ ${
           result = await reservarResponse.json();
           console.log("Reservar result:", result);
         } else if (functionName === "encaminhar_humano") {
-          result = {
-            success: true,
-            message: "Conversa encaminhada para atendente humano.",
-            motivo: args.motivo,
-            encaminhado: true,
-          };
+          // FALLBACK LOGIC: Check if we have items with prices that should be returned first
+          const examsWithPriceFound = foundExams.filter(e => e.has_price && e.price_private);
+          
+          if (examsWithPriceFound.length > 0) {
+            // We have items with prices - intercept and provide partial response
+            shouldInterceptHandoff = true;
+            
+            const priceLines = examsWithPriceFound.map(e => 
+              `• ${e.nome}: ${formatPrice(e)}`
+            ).join("\n");
+            
+            const total = examsWithPriceFound.reduce((sum, e) => sum + (e.price_private || 0), 0);
+            const formattedTotal = new Intl.NumberFormat("pt-BR", {
+              style: "currency",
+              currency: "BRL",
+            }).format(total);
+
+            if (examsWithPriceFound.length === foundExams.length) {
+              // All items have prices - don't handoff, just return the budget
+              interceptMessage = `Segue os valores:\n${priceLines}${examsWithPriceFound.length > 1 ? `\n\nTotal: ${formattedTotal}` : ""}\n\nDeseja agendar?`;
+              result = {
+                success: false,
+                intercepted: true,
+                message: "Orçamento disponível - não é necessário encaminhar",
+              };
+            } else {
+              // Some items have prices, some don't - return what we have, then handoff
+              const examsWithoutPriceFound = foundExams.filter(e => !e.has_price || !e.price_private);
+              interceptMessage = `Segue os valores que encontrei:\n${priceLines}\n\nTotal parcial: ${formattedTotal}\n\nPara ${examsWithoutPriceFound.map(e => e.nome).join(", ")}, vou te encaminhar para um atendente confirmar os valores.`;
+              result = {
+                success: true,
+                message: "Conversa encaminhada para atendente humano.",
+                motivo: args.motivo,
+                encaminhado: true,
+                partialBudget: true,
+              };
+            }
+          } else {
+            result = {
+              success: true,
+              message: "Conversa encaminhada para atendente humano.",
+              motivo: args.motivo,
+              encaminhado: true,
+            };
+          }
         }
 
         toolResults.push({ toolCall, result });
+      }
+
+      // If we intercepted a handoff with available prices, return our custom message
+      if (shouldInterceptHandoff && interceptMessage) {
+        const humanHandoff = toolResults.some(tr => tr.result?.encaminhado);
+        
+        return new Response(
+          JSON.stringify({
+            message: interceptMessage,
+            humanHandoff,
+            toolsUsed: toolResults.map(tr => ({
+              name: tr.toolCall.function.name,
+              result: tr.result,
+            })),
+          }),
+          {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
       }
 
       // Build messages with tool results
@@ -702,17 +572,15 @@ ${
       }
 
       const finalData = await finalResponse.json();
-      const finalContent =
-        finalData.choices?.[0]?.message?.content || "Desculpe, não consegui processar sua solicitação.";
+      const finalContent = finalData.choices?.[0]?.message?.content || "Desculpe, não consegui processar sua solicitação.";
 
-      // Check if human handoff was triggered
-      const humanHandoff = toolResults.some((tr) => tr.result?.encaminhado);
+      const humanHandoff = toolResults.some(tr => tr.result?.encaminhado);
 
       return new Response(
         JSON.stringify({
           message: finalContent,
           humanHandoff,
-          toolsUsed: toolResults.map((tr) => ({
+          toolsUsed: toolResults.map(tr => ({
             name: tr.toolCall.function.name,
             result: tr.result,
           })),
