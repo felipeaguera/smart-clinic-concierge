@@ -28,9 +28,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Trash2, Save, X } from 'lucide-react';
+import { Loader2, Trash2, Save, X, CalendarClock } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { SelecionarNovoHorarioModal } from './SelecionarNovoHorarioModal';
 
 interface Appointment {
   id: string;
@@ -39,7 +40,7 @@ interface Appointment {
   status: string;
   paciente_nome?: string | null;
   paciente_telefone?: string | null;
-  exam_types?: { nome: string };
+  exam_types?: { id: string; nome: string; duracao_minutos: number };
 }
 
 interface Doctor {
@@ -53,6 +54,7 @@ interface EditarAgendamentoModalProps {
   appointment: Appointment | null;
   doctor: Doctor;
   selectedDate: Date;
+  tipoAtendimento: 'consulta' | 'ultrassom';
 }
 
 const STATUS_OPTIONS = [
@@ -67,11 +69,13 @@ export function EditarAgendamentoModal({
   appointment,
   doctor,
   selectedDate,
+  tipoAtendimento,
 }: EditarAgendamentoModalProps) {
   const [status, setStatus] = useState('');
   const [pacienteNome, setPacienteNome] = useState('');
   const [pacienteTelefone, setPacienteTelefone] = useState('');
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [showRescheduleModal, setShowRescheduleModal] = useState(false);
   
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -149,25 +153,20 @@ export function EditarAgendamentoModal({
     });
   };
 
-  const handleCancelAppointment = () => {
-    // Marca como cancelado ao invés de deletar
-    updateMutation.mutate({
-      status: 'cancelado',
-      paciente_nome: pacienteNome.trim(),
-      paciente_telefone: pacienteTelefone.trim(),
-    });
-    setShowCancelConfirm(false);
-  };
-
   const handleDeleteAppointment = () => {
     deleteMutation.mutate();
+  };
+
+  const handleRescheduleSuccess = () => {
+    setShowRescheduleModal(false);
+    onClose();
   };
 
   if (!appointment) return null;
 
   return (
     <>
-      <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <Dialog open={isOpen && !showRescheduleModal} onOpenChange={(open) => !open && onClose()}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Editar Agendamento</DialogTitle>
@@ -199,6 +198,17 @@ export function EditarAgendamentoModal({
                 </span>
               </div>
             </div>
+
+            {/* Botão para alterar data/horário */}
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full"
+              onClick={() => setShowRescheduleModal(true)}
+            >
+              <CalendarClock className="h-4 w-4 mr-2" />
+              Alterar Data/Horário
+            </Button>
 
             {/* Nome do Paciente */}
             <div className="space-y-2">
@@ -266,6 +276,16 @@ export function EditarAgendamentoModal({
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Modal de reagendamento */}
+      <SelecionarNovoHorarioModal
+        isOpen={showRescheduleModal}
+        onClose={() => setShowRescheduleModal(false)}
+        appointment={appointment}
+        doctor={doctor}
+        tipoAtendimento={tipoAtendimento}
+        onSuccess={handleRescheduleSuccess}
+      />
 
       {/* Confirmação de exclusão */}
       <AlertDialog open={showCancelConfirm} onOpenChange={setShowCancelConfirm}>
