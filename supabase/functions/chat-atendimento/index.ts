@@ -152,6 +152,7 @@ PREPARO/ORIENTAÇÕES: Só informar APÓS agendamento confirmado.
 LABORATÓRIO: Exames de laboratório NÃO usam agenda.
 ULTRASSOM: Sempre usar buscar_disponibilidade_categoria para mostrar TODOS os médicos.
 CONSULTA: Sempre perguntar qual médico se não especificado.
+QUANDO O PREPARO FOR "NEHUM" OU NADA ESTIVER ANOTADO NAO PRECISA CITAR ISSO NA MENSSAGEM
 `;
 
 interface Message {
