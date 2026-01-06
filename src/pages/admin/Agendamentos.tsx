@@ -1,17 +1,9 @@
-import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Select,
   SelectContent,
@@ -19,66 +11,57 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { useToast } from '@/hooks/use-toast';
-import { Plus, Loader2 } from 'lucide-react';
-import { format } from 'date-fns';
+import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { AgendaGrid } from '@/components/admin/agenda/AgendaGrid';
+import { NovoAgendamentoModal } from '@/components/admin/agenda/NovoAgendamentoModal';
+import { cn } from '@/lib/utils';
+import { format, addDays, subDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { CalendarIcon, ChevronLeft, ChevronRight, Stethoscope, Activity } from 'lucide-react';
 
 interface Doctor {
   id: string;
   nome: string;
 }
 
+interface DoctorRule {
+  id: string;
+  doctor_id: string;
+  dia_semana: number;
+  hora_inicio: string;
+  hora_fim: string;
+  tipo_atendimento: string;
+}
+
 interface ExamType {
   id: string;
   nome: string;
+  categoria: string;
+  duracao_minutos: number;
 }
 
 interface Appointment {
   id: string;
-  doctor_id: string;
-  exam_type_id: string;
-  data: string;
   hora_inicio: string;
   hora_fim: string;
   status: string;
-  doctors: { nome: string };
-  exam_types: { nome: string };
+  exam_types?: { nome: string };
 }
 
-const STATUS_OPTIONS = [
-  { value: 'reservado', label: 'Reservado', variant: 'secondary' as const },
-  { value: 'confirmado', label: 'Confirmado', variant: 'default' as const },
-  { value: 'cancelado', label: 'Cancelado', variant: 'destructive' as const },
-];
+type TipoAtendimento = 'consulta' | 'ultrassom';
 
 export default function Agendamentos() {
-  const [isOpen, setIsOpen] = useState(false);
-  const [filterDoctor, setFilterDoctor] = useState<string>('');
-  const [filterData, setFilterData] = useState('');
-  const [filterStatus, setFilterStatus] = useState<string>('');
+  const [tipoAtendimento, setTipoAtendimento] = useState<TipoAtendimento>('consulta');
+  const [selectedDoctorId, setSelectedDoctorId] = useState<string>('');
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [calendarOpen, setCalendarOpen] = useState(false);
   
-  // Form state
-  const [doctorId, setDoctorId] = useState('');
-  const [examTypeId, setExamTypeId] = useState('');
-  const [data, setData] = useState('');
-  const [horaInicio, setHoraInicio] = useState('');
-  const [horaFim, setHoraFim] = useState('');
-  const [status, setStatus] = useState('reservado');
-  
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
+  // Modal state
+  const [modalOpen, setModalOpen] = useState(false);
+  const [selectedTime, setSelectedTime] = useState('');
 
+  // Fetch doctors
   const { data: doctors } = useQuery({
     queryKey: ['doctors'],
     queryFn: async () => {
@@ -92,12 +75,25 @@ export default function Agendamentos() {
     },
   });
 
+  // Fetch doctor rules
+  const { data: doctorRules } = useQuery({
+    queryKey: ['doctor_rules'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('doctor_rules')
+        .select('*');
+      if (error) throw error;
+      return data as DoctorRule[];
+    },
+  });
+
+  // Fetch exam types
   const { data: examTypes } = useQuery({
     queryKey: ['exam_types'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('exam_types')
-        .select('id, nome')
+        .select('id, nome, categoria, duracao_minutos')
         .eq('ativo', true)
         .order('nome');
       if (error) throw error;
@@ -105,123 +101,94 @@ export default function Agendamentos() {
     },
   });
 
-  const { data: appointments, isLoading } = useQuery({
-    queryKey: ['appointments', filterDoctor, filterData, filterStatus],
+  // Fetch appointments for selected doctor and date
+  const { data: appointments, isLoading: isLoadingAppointments } = useQuery({
+    queryKey: ['appointments', selectedDoctorId, format(selectedDate, 'yyyy-MM-dd')],
     queryFn: async () => {
-      let query = supabase
+      if (!selectedDoctorId) return [];
+      
+      const { data, error } = await supabase
         .from('appointments')
-        .select('*, doctors(nome), exam_types(nome)')
-        .order('data', { ascending: false })
-        .order('hora_inicio');
+        .select('id, hora_inicio, hora_fim, status, exam_types(nome)')
+        .eq('doctor_id', selectedDoctorId)
+        .eq('data', format(selectedDate, 'yyyy-MM-dd'));
       
-      if (filterDoctor) {
-        query = query.eq('doctor_id', filterDoctor);
-      }
-      if (filterData) {
-        query = query.eq('data', filterData);
-      }
-      if (filterStatus) {
-        query = query.eq('status', filterStatus);
-      }
-      
-      const { data, error } = await query;
       if (error) throw error;
       return data as Appointment[];
     },
+    enabled: !!selectedDoctorId,
   });
 
-  const mutation = useMutation({
-    mutationFn: async (input: {
-      doctor_id: string;
-      exam_type_id: string;
-      data: string;
-      hora_inicio: string;
-      hora_fim: string;
-      status: string;
-    }) => {
-      const { error } = await supabase.from('appointments').insert(input);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['appointments'] });
-      toast({ title: 'Sucesso', description: 'Agendamento criado!' });
-      handleClose();
-    },
-    onError: (error: Error) => {
-      toast({ title: 'Erro', description: error.message, variant: 'destructive' });
-    },
-  });
-
-  const handleClose = () => {
-    setIsOpen(false);
-    setDoctorId('');
-    setExamTypeId('');
-    setData('');
-    setHoraInicio('');
-    setHoraFim('');
-    setStatus('reservado');
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!doctorId || !examTypeId || !data || !horaInicio || !horaFim) {
-      toast({ title: 'Erro', description: 'Preencha todos os campos obrigatórios', variant: 'destructive' });
-      return;
-    }
-    if (horaFim <= horaInicio) {
-      toast({ title: 'Erro', description: 'Hora fim deve ser maior que hora início', variant: 'destructive' });
-      return;
-    }
-    mutation.mutate({
-      doctor_id: doctorId,
-      exam_type_id: examTypeId,
-      data,
-      hora_inicio: horaInicio,
-      hora_fim: horaFim,
-      status,
+  // Filtra médicos baseado no tipo de atendimento e suas regras
+  const filteredDoctors = useMemo(() => {
+    if (!doctors || !doctorRules) return [];
+    
+    return doctors.filter((doctor) => {
+      const rules = doctorRules.filter((r) => r.doctor_id === doctor.id);
+      return rules.some(
+        (rule) =>
+          rule.tipo_atendimento === 'ambos' || rule.tipo_atendimento === tipoAtendimento
+      );
     });
+  }, [doctors, doctorRules, tipoAtendimento]);
+
+  // Regras do médico selecionado
+  const selectedDoctorRules = useMemo(() => {
+    if (!doctorRules || !selectedDoctorId) return [];
+    return doctorRules.filter((r) => r.doctor_id === selectedDoctorId);
+  }, [doctorRules, selectedDoctorId]);
+
+  const selectedDoctor = doctors?.find((d) => d.id === selectedDoctorId);
+
+  // Handlers
+  const handleTipoChange = (tipo: TipoAtendimento) => {
+    setTipoAtendimento(tipo);
+    setSelectedDoctorId(''); // Reset doctor when changing type
   };
 
-  const formatDate = (dateStr: string) => {
-    try {
-      return format(new Date(dateStr + 'T00:00:00'), 'dd/MM/yyyy', { locale: ptBR });
-    } catch {
-      return dateStr;
-    }
+  const handleSlotClick = (time: string) => {
+    setSelectedTime(time);
+    setModalOpen(true);
   };
 
-  const getStatusBadge = (statusValue: string) => {
-    const option = STATUS_OPTIONS.find((o) => o.value === statusValue);
-    return (
-      <Badge variant={option?.variant || 'secondary'}>
-        {option?.label || statusValue}
-      </Badge>
-    );
-  };
-
-  const clearFilters = () => {
-    setFilterDoctor('');
-    setFilterData('');
-    setFilterStatus('');
-  };
+  const handlePrevDay = () => setSelectedDate(subDays(selectedDate, 1));
+  const handleNextDay = () => setSelectedDate(addDays(selectedDate, 1));
 
   return (
-    <AdminLayout title="Agendamentos">
+    <AdminLayout title="Agenda Visual">
       <div className="space-y-6">
+        {/* Seletor de Tipo */}
         <Card className="glass-card">
-          <CardHeader>
-            <CardTitle className="text-lg font-medium">Filtros</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="space-y-2">
-                <Label>Médico</Label>
-                <Select value={filterDoctor} onValueChange={setFilterDoctor}>
+          <CardContent className="pt-6">
+            <div className="flex flex-col sm:flex-row gap-4">
+              {/* Toggle Tipo de Atendimento */}
+              <div className="flex gap-2">
+                <Button
+                  variant={tipoAtendimento === 'consulta' ? 'default' : 'outline'}
+                  onClick={() => handleTipoChange('consulta')}
+                  className="flex-1 sm:flex-none"
+                >
+                  <Stethoscope className="h-4 w-4 mr-2" />
+                  Consulta
+                </Button>
+                <Button
+                  variant={tipoAtendimento === 'ultrassom' ? 'default' : 'outline'}
+                  onClick={() => handleTipoChange('ultrassom')}
+                  className="flex-1 sm:flex-none"
+                >
+                  <Activity className="h-4 w-4 mr-2" />
+                  Ultrassom
+                </Button>
+              </div>
+
+              {/* Seletor de Médico */}
+              <div className="flex-1 max-w-xs">
+                <Select value={selectedDoctorId} onValueChange={setSelectedDoctorId}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Todos" />
+                    <SelectValue placeholder="Selecione o médico" />
                   </SelectTrigger>
                   <SelectContent>
-                    {doctors?.map((doctor) => (
+                    {filteredDoctors.map((doctor) => (
                       <SelectItem key={doctor.id} value={doctor.id}>
                         {doctor.nome}
                       </SelectItem>
@@ -229,179 +196,99 @@ export default function Agendamentos() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
-                <Label>Data</Label>
-                <Input
-                  type="date"
-                  value={filterData}
-                  onChange={(e) => setFilterData(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Status</Label>
-                <Select value={filterStatus} onValueChange={setFilterStatus}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Todos" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {STATUS_OPTIONS.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex items-end">
-                <Button variant="outline" onClick={clearFilters}>
-                  Limpar Filtros
-                </Button>
-              </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="glass-card">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
-            <CardTitle className="text-lg font-medium">Lista de Agendamentos</CardTitle>
-            <Dialog open={isOpen} onOpenChange={setIsOpen}>
-              <DialogTrigger asChild>
-                <Button onClick={() => { handleClose(); setIsOpen(true); }}>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Novo Agendamento (Manual)
+        {/* Agenda */}
+        {selectedDoctorId && (
+          <Card className="glass-card">
+            <CardHeader className="pb-4">
+              {/* Navegação de Data */}
+              <div className="flex items-center justify-between">
+                <Button variant="outline" size="icon" onClick={handlePrevDay}>
+                  <ChevronLeft className="h-4 w-4" />
                 </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-md">
-                <DialogHeader>
-                  <DialogTitle>Novo Agendamento (Manual)</DialogTitle>
-                </DialogHeader>
-                <form onSubmit={handleSubmit} className="space-y-4">
-                  <div className="space-y-2">
-                    <Label>Médico</Label>
-                    <Select value={doctorId} onValueChange={setDoctorId}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione o médico" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {doctors?.map((doctor) => (
-                          <SelectItem key={doctor.id} value={doctor.id}>
-                            {doctor.nome}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Tipo de Exame</Label>
-                    <Select value={examTypeId} onValueChange={setExamTypeId}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione o exame" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {examTypes?.map((exam) => (
-                          <SelectItem key={exam.id} value={exam.id}>
-                            {exam.nome}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Data</Label>
-                    <Input
-                      type="date"
-                      value={data}
-                      onChange={(e) => setData(e.target.value)}
+
+                <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className={cn(
+                        'min-w-[240px] justify-center text-center font-medium',
+                        !selectedDate && 'text-muted-foreground'
+                      )}
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {format(selectedDate, "EEEE, dd 'de' MMMM", { locale: ptBR })}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="center">
+                    <Calendar
+                      mode="single"
+                      selected={selectedDate}
+                      onSelect={(date) => {
+                        if (date) {
+                          setSelectedDate(date);
+                          setCalendarOpen(false);
+                        }
+                      }}
+                      locale={ptBR}
+                      initialFocus
                     />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Hora Início</Label>
-                      <Input
-                        type="time"
-                        value={horaInicio}
-                        onChange={(e) => setHoraInicio(e.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Hora Fim</Label>
-                      <Input
-                        type="time"
-                        value={horaFim}
-                        onChange={(e) => setHoraFim(e.target.value)}
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Status</Label>
-                    <Select value={status} onValueChange={setStatus}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {STATUS_OPTIONS.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="flex gap-2 justify-end">
-                    <Button type="button" variant="outline" onClick={handleClose}>
-                      Cancelar
-                    </Button>
-                    <Button type="submit" disabled={mutation.isPending}>
-                      {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                      Salvar
-                    </Button>
-                  </div>
-                </form>
-              </DialogContent>
-            </Dialog>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <div className="flex justify-center py-8">
-                <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                  </PopoverContent>
+                </Popover>
+
+                <Button variant="outline" size="icon" onClick={handleNextDay}>
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
               </div>
-            ) : (
-              <div className="rounded-lg border overflow-hidden">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-muted/50">
-                      <TableHead>Data</TableHead>
-                      <TableHead>Horário</TableHead>
-                      <TableHead>Médico</TableHead>
-                      <TableHead>Exame</TableHead>
-                      <TableHead>Status</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {appointments?.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
-                          Nenhum agendamento encontrado
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      appointments?.map((appointment) => (
-                        <TableRow key={appointment.id}>
-                          <TableCell className="font-medium">{formatDate(appointment.data)}</TableCell>
-                          <TableCell>{appointment.hora_inicio} - {appointment.hora_fim}</TableCell>
-                          <TableCell>{appointment.doctors?.nome}</TableCell>
-                          <TableCell>{appointment.exam_types?.nome}</TableCell>
-                          <TableCell>{getStatusBadge(appointment.status)}</TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
+
+              <CardTitle className="text-center mt-4 text-lg">
+                Agenda de {selectedDoctor?.nome} - {tipoAtendimento === 'consulta' ? 'Consultas' : 'Ultrassom'}
+              </CardTitle>
+            </CardHeader>
+
+            <CardContent>
+              <AgendaGrid
+                doctorRules={selectedDoctorRules}
+                appointments={appointments || []}
+                selectedDate={selectedDate}
+                tipoAtendimento={tipoAtendimento}
+                onSlotClick={handleSlotClick}
+                isLoading={isLoadingAppointments}
+              />
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Mensagem quando nenhum médico selecionado */}
+        {!selectedDoctorId && (
+          <Card className="glass-card">
+            <CardContent className="py-12">
+              <div className="text-center text-muted-foreground">
+                <p className="text-lg font-medium">Selecione um médico</p>
+                <p className="text-sm mt-1">
+                  Escolha o tipo de atendimento e um médico para visualizar a agenda.
+                </p>
               </div>
-            )}
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
       </div>
+
+      {/* Modal de Novo Agendamento */}
+      {selectedDoctor && (
+        <NovoAgendamentoModal
+          isOpen={modalOpen}
+          onClose={() => setModalOpen(false)}
+          selectedDate={selectedDate}
+          selectedTime={selectedTime}
+          doctor={selectedDoctor}
+          tipoAtendimento={tipoAtendimento}
+          examTypes={examTypes || []}
+        />
+      )}
     </AdminLayout>
   );
 }
