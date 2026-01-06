@@ -19,6 +19,7 @@ const SYSTEM_PROMPT = `Você é Clara, assistente virtual de uma clínica médic
 3. Se há múltiplos itens COM preço → liste valores individuais + total.
 4. Encaminhe para humano APENAS se: convênio, desconto, item SEM preço, pedido explícito, dúvida clínica.
 5. Interprete erros de escrita e abreviações - NUNCA corrija o paciente.
+6. Não falar tempo de duração da consulta ou exame
 
 ═══════════════════════════════════════
 2. FLUXO DE ORÇAMENTO
@@ -179,11 +180,9 @@ function matchesExam(examName: string, searchTerm: string): boolean {
   // Match por palavras
   const searchWords = normalizedSearch.split(" ");
   const examWords = normalizedExam.split(" ");
-  
-  const matchingWords = searchWords.filter(sw => 
-    examWords.some(ew => ew.includes(sw) || sw.includes(ew))
-  );
-  
+
+  const matchingWords = searchWords.filter((sw) => examWords.some((ew) => ew.includes(sw) || sw.includes(ew)));
+
   if (matchingWords.length >= Math.min(2, searchWords.length)) {
     return true;
   }
@@ -206,9 +205,9 @@ function matchesExam(examName: string, searchTerm: string): boolean {
 function extractMentionedItems(
   message: string,
   examTypes: any[],
-  doctors: any[]
-): { 
-  foundExams: any[]; 
+  doctors: any[],
+): {
+  foundExams: any[];
   foundDoctors: any[];
   unresolved: string[];
 } {
@@ -220,7 +219,7 @@ function extractMentionedItems(
   // Tentar encontrar exames
   for (const exam of examTypes) {
     if (matchesExam(exam.nome, message)) {
-      if (!foundExams.find(e => e.id === exam.id)) {
+      if (!foundExams.find((e) => e.id === exam.id)) {
         foundExams.push(exam);
       }
     }
@@ -229,9 +228,11 @@ function extractMentionedItems(
   // Tentar encontrar médicos
   for (const doctor of doctors) {
     const normalizedDoctor = normalizeText(doctor.nome);
-    if (normalized.includes(normalizedDoctor) || 
-        normalizedDoctor.split(" ").some((w: string) => w.length > 3 && normalized.includes(w))) {
-      if (!foundDoctors.find(d => d.id === doctor.id)) {
+    if (
+      normalized.includes(normalizedDoctor) ||
+      normalizedDoctor.split(" ").some((w: string) => w.length > 3 && normalized.includes(w))
+    ) {
+      if (!foundDoctors.find((d) => d.id === doctor.id)) {
         foundDoctors.push(doctor);
       }
     }
@@ -239,13 +240,32 @@ function extractMentionedItems(
 
   // Detectar termos não resolvidos (palavras-chave de orçamento sem match)
   const budgetKeywords = ["orcamento", "valor", "preco", "quanto", "custa"];
-  const hasBudgetIntent = budgetKeywords.some(k => normalized.includes(k));
-  
+  const hasBudgetIntent = budgetKeywords.some((k) => normalized.includes(k));
+
   if (hasBudgetIntent && foundExams.length === 0) {
     // Tentar extrair o que o paciente quer
     const words = normalized.split(" ");
-    const stopWords = ["de", "do", "da", "um", "uma", "o", "a", "e", "para", "com", "quero", "gostaria", "orcamento", "valor", "preco", "quanto", "custa", "saber"];
-    const relevantWords = words.filter(w => w.length > 2 && !stopWords.includes(w));
+    const stopWords = [
+      "de",
+      "do",
+      "da",
+      "um",
+      "uma",
+      "o",
+      "a",
+      "e",
+      "para",
+      "com",
+      "quero",
+      "gostaria",
+      "orcamento",
+      "valor",
+      "preco",
+      "quanto",
+      "custa",
+      "saber",
+    ];
+    const relevantWords = words.filter((w) => w.length > 2 && !stopWords.includes(w));
     if (relevantWords.length > 0) {
       unresolved.push(relevantWords.join(" "));
     }
@@ -293,12 +313,12 @@ serve(async (req) => {
     const examTypes = examTypesResult.data || [];
 
     // Pré-processar a última mensagem do usuário para ajudar a IA
-    const lastUserMessage = [...messages].reverse().find(m => m.role === "user")?.content || "";
+    const lastUserMessage = [...messages].reverse().find((m) => m.role === "user")?.content || "";
     const { foundExams, foundDoctors, unresolved } = extractMentionedItems(lastUserMessage, examTypes, doctors);
 
     // Build simplified context with pricing focus
-    const examsWithPrice = examTypes.filter(e => e.has_price && e.price_private);
-    const examsWithoutPrice = examTypes.filter(e => !e.has_price || !e.price_private);
+    const examsWithPrice = examTypes.filter((e) => e.has_price && e.price_private);
+    const examsWithoutPrice = examTypes.filter((e) => !e.has_price || !e.price_private);
 
     const formatPrice = (exam: any) => {
       return new Intl.NumberFormat("pt-BR", {
@@ -310,7 +330,15 @@ serve(async (req) => {
     // Get current date for natural language date interpretation
     const now = new Date();
     const currentDate = now.toISOString().split("T")[0];
-    const weekdays = ["domingo", "segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sábado"];
+    const weekdays = [
+      "domingo",
+      "segunda-feira",
+      "terça-feira",
+      "quarta-feira",
+      "quinta-feira",
+      "sexta-feira",
+      "sábado",
+    ];
     const currentWeekday = weekdays[now.getDay()];
     const formattedDate = `${now.getDate().toString().padStart(2, "0")}/${(now.getMonth() + 1).toString().padStart(2, "0")}/${now.getFullYear()}`;
 
@@ -323,46 +351,58 @@ DADOS DO SISTEMA
 DATA ATUAL: ${currentDate} (${currentWeekday}, ${formattedDate})
 
 MÉDICOS:
-${doctors.map(d => `• ${d.nome} (${d.especialidade}) [ID: ${d.id}]`).join("\n")}
+${doctors.map((d) => `• ${d.nome} (${d.especialidade}) [ID: ${d.id}]`).join("\n")}
 
 EXAMES COM PREÇO CADASTRADO:
-${examsWithPrice.map(e => `• "${e.nome}" (${e.categoria}): ${formatPrice(e)} [ID: ${e.id}]`).join("\n") || "(nenhum)"}
+${examsWithPrice.map((e) => `• "${e.nome}" (${e.categoria}): ${formatPrice(e)} [ID: ${e.id}]`).join("\n") || "(nenhum)"}
 
 EXAMES SEM PREÇO (encaminhar para humano):
-${examsWithoutPrice.map(e => `• "${e.nome}" (${e.categoria}) [ID: ${e.id}]`).join("\n") || "(nenhum)"}
+${examsWithoutPrice.map((e) => `• "${e.nome}" (${e.categoria}) [ID: ${e.id}]`).join("\n") || "(nenhum)"}
 
-${foundExams.length > 0 ? `
+${
+  foundExams.length > 0
+    ? `
 ═══════════════════════════════════════
 ITENS DETECTADOS NA ÚLTIMA MENSAGEM
 ═══════════════════════════════════════
-${foundExams.map(e => {
-  if (e.has_price && e.price_private) {
-    return `✓ ${e.nome}: ${formatPrice(e)} [ID: ${e.id}]`;
-  }
-  return `✗ ${e.nome}: SEM PREÇO - encaminhar para humano [ID: ${e.id}]`;
-}).join("\n")}
-${foundDoctors.map(d => `• Médico: ${d.nome} [ID: ${d.id}]`).join("\n")}
-` : ""}
+${foundExams
+  .map((e) => {
+    if (e.has_price && e.price_private) {
+      return `✓ ${e.nome}: ${formatPrice(e)} [ID: ${e.id}]`;
+    }
+    return `✗ ${e.nome}: SEM PREÇO - encaminhar para humano [ID: ${e.id}]`;
+  })
+  .join("\n")}
+${foundDoctors.map((d) => `• Médico: ${d.nome} [ID: ${d.id}]`).join("\n")}
+`
+    : ""
+}
 
-${context ? `
+${
+  context
+    ? `
 CONTEXTO DA CONVERSA:
 • Médico: ${context.selectedDoctorId || "nenhum"}
 • Exame: ${context.selectedExamTypeId || "nenhum"}  
 • Data: ${context.selectedDate || "nenhuma"}
 • Horário: ${context.selectedTime || "nenhum"}
 • Aguardando confirmação: ${context.awaitingConfirmation ? "sim" : "não"}
-` : ""}
+`
+    : ""
+}
 
 ═══════════════════════════════════════
 DETALHES DOS EXAMES (para usar após agendamento)
 ═══════════════════════════════════════
-${examTypes.map(e => {
-  let info = `${e.nome} [ID: ${e.id}]`;
-  if (e.preparo) info += `\n  Preparo: ${e.preparo}`;
-  if (e.orientacoes) info += `\n  Orientações: ${e.orientacoes}`;
-  if (e.duracao_minutos && e.categoria !== "laboratorio") info += `\n  Duração: ${e.duracao_minutos} min`;
-  return info;
-}).join("\n\n")}
+${examTypes
+  .map((e) => {
+    let info = `${e.nome} [ID: ${e.id}]`;
+    if (e.preparo) info += `\n  Preparo: ${e.preparo}`;
+    if (e.orientacoes) info += `\n  Orientações: ${e.orientacoes}`;
+    if (e.duracao_minutos && e.categoria !== "laboratorio") info += `\n  Duração: ${e.duracao_minutos} min`;
+    return info;
+  })
+  .join("\n\n")}
 `;
 
     // Define tools for the AI
@@ -371,7 +411,8 @@ ${examTypes.map(e => {
         type: "function",
         function: {
           name: "buscar_disponibilidade",
-          description: "Busca horários disponíveis para agendamento com um médico específico. Usar apenas quando o paciente já escolheu o médico.",
+          description:
+            "Busca horários disponíveis para agendamento com um médico específico. Usar apenas quando o paciente já escolheu o médico.",
           parameters: {
             type: "object",
             properties: {
@@ -388,7 +429,8 @@ ${examTypes.map(e => {
         type: "function",
         function: {
           name: "buscar_disponibilidade_categoria",
-          description: "Busca horários disponíveis de TODOS os médicos que atendem determinada categoria de exame. SEMPRE usar para ULTRASSONS.",
+          description:
+            "Busca horários disponíveis de TODOS os médicos que atendem determinada categoria de exame. SEMPRE usar para ULTRASSONS.",
           parameters: {
             type: "object",
             properties: {
@@ -404,14 +446,22 @@ ${examTypes.map(e => {
         type: "function",
         function: {
           name: "buscar_proxima_vaga",
-          description: "Encontra automaticamente a próxima data com horários disponíveis (evita avançar dia a dia). Use quando o paciente pedir 'próxima vaga/data/horário disponível' OU quando não houver horários na data consultada.",
+          description:
+            "Encontra automaticamente a próxima data com horários disponíveis (evita avançar dia a dia). Use quando o paciente pedir 'próxima vaga/data/horário disponível' OU quando não houver horários na data consultada.",
           parameters: {
             type: "object",
             properties: {
               exam_type_id: { type: "string", description: "UUID do tipo de exame" },
               data_inicial: { type: "string", description: "Data inicial para busca (YYYY-MM-DD)" },
-              doctor_id: { type: "string", description: "UUID do médico (opcional). Se não informado, busca por categoria e retorna o primeiro dia com qualquer médico." },
-              hora_minima: { type: "string", description: "Hora mínima HH:MM (opcional). Para buscar o próximo horário ainda no mesmo dia." },
+              doctor_id: {
+                type: "string",
+                description:
+                  "UUID do médico (opcional). Se não informado, busca por categoria e retorna o primeiro dia com qualquer médico.",
+              },
+              hora_minima: {
+                type: "string",
+                description: "Hora mínima HH:MM (opcional). Para buscar o próximo horário ainda no mesmo dia.",
+              },
               max_dias: { type: "number", description: "Quantos dias à frente buscar (padrão 30)." },
             },
             required: ["exam_type_id", "data_inicial"],
@@ -442,7 +492,8 @@ ${examTypes.map(e => {
         type: "function",
         function: {
           name: "encaminhar_humano",
-          description: "Encaminha para atendente humano. Usar APENAS para: convênio, desconto, item sem preço, pedido explícito, dúvida clínica.",
+          description:
+            "Encaminha para atendente humano. Usar APENAS para: convênio, desconto, item sem preço, pedido explícito, dúvida clínica.",
           parameters: {
             type: "object",
             properties: {
@@ -498,7 +549,7 @@ ${examTypes.map(e => {
     // Check if AI wants to call a tool
     if (choice.message?.tool_calls && choice.message.tool_calls.length > 0) {
       const toolResults: { toolCall: any; result: any }[] = [];
-      
+
       // Check for handoff with items that have prices - fallback logic
       let shouldInterceptHandoff = false;
       let interceptMessage = "";
@@ -531,8 +582,7 @@ ${examTypes.map(e => {
           result = await categoriaResponse.json();
           console.log("Disponibilidade categoria result:", result);
         } else if (functionName === "buscar_proxima_vaga") {
-          const maxDias =
-            typeof args.max_dias === "number" && args.max_dias > 0 ? Math.min(args.max_dias, 90) : 30;
+          const maxDias = typeof args.max_dias === "number" && args.max_dias > 0 ? Math.min(args.max_dias, 90) : 30;
           const startDate = args.data_inicial;
 
           const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
@@ -577,12 +627,12 @@ ${examTypes.map(e => {
                 const json = await r.json();
                 const slotsRaw = json?.horarios_disponiveis || [];
                 const slots = Array.isArray(slotsRaw)
-                  ? (minMinutes == null
-                      ? slotsRaw
-                      : slotsRaw.filter((s: any) => {
-                          const m = timeToMinutes(String(s?.hora_inicio || ""));
-                          return Number.isFinite(m) && m >= minMinutes;
-                        }))
+                  ? minMinutes == null
+                    ? slotsRaw
+                    : slotsRaw.filter((s: any) => {
+                        const m = timeToMinutes(String(s?.hora_inicio || ""));
+                        return Number.isFinite(m) && m >= minMinutes;
+                      })
                   : [];
 
                 if (slots.length > 0) {
@@ -635,13 +685,11 @@ ${examTypes.map(e => {
               }
             }
 
-            result =
-              found ||
-              {
-                success: false,
-                message: `Nenhuma disponibilidade encontrada nos próximos ${maxDias} dias.`,
-                data_inicial: startDate,
-              };
+            result = found || {
+              success: false,
+              message: `Nenhuma disponibilidade encontrada nos próximos ${maxDias} dias.`,
+              data_inicial: startDate,
+            };
           }
 
           console.log("Próxima vaga result:", result);
@@ -664,16 +712,14 @@ ${examTypes.map(e => {
           console.log("Reservar result:", result);
         } else if (functionName === "encaminhar_humano") {
           // FALLBACK LOGIC: Check if we have items with prices that should be returned first
-          const examsWithPriceFound = foundExams.filter(e => e.has_price && e.price_private);
-          
+          const examsWithPriceFound = foundExams.filter((e) => e.has_price && e.price_private);
+
           if (examsWithPriceFound.length > 0) {
             // We have items with prices - intercept and provide partial response
             shouldInterceptHandoff = true;
-            
-            const priceLines = examsWithPriceFound.map(e => 
-              `• ${e.nome}: ${formatPrice(e)}`
-            ).join("\n");
-            
+
+            const priceLines = examsWithPriceFound.map((e) => `• ${e.nome}: ${formatPrice(e)}`).join("\n");
+
             const total = examsWithPriceFound.reduce((sum, e) => sum + (e.price_private || 0), 0);
             const formattedTotal = new Intl.NumberFormat("pt-BR", {
               style: "currency",
@@ -690,8 +736,8 @@ ${examTypes.map(e => {
               };
             } else {
               // Some items have prices, some don't - return what we have, then handoff
-              const examsWithoutPriceFound = foundExams.filter(e => !e.has_price || !e.price_private);
-              interceptMessage = `Segue os valores que encontrei:\n${priceLines}\n\nTotal parcial: ${formattedTotal}\n\nPara ${examsWithoutPriceFound.map(e => e.nome).join(", ")}, vou te encaminhar para um atendente confirmar os valores.`;
+              const examsWithoutPriceFound = foundExams.filter((e) => !e.has_price || !e.price_private);
+              interceptMessage = `Segue os valores que encontrei:\n${priceLines}\n\nTotal parcial: ${formattedTotal}\n\nPara ${examsWithoutPriceFound.map((e) => e.nome).join(", ")}, vou te encaminhar para um atendente confirmar os valores.`;
               result = {
                 success: true,
                 message: "Conversa encaminhada para atendente humano.",
@@ -715,13 +761,13 @@ ${examTypes.map(e => {
 
       // If we intercepted a handoff with available prices, return our custom message
       if (shouldInterceptHandoff && interceptMessage) {
-        const humanHandoff = toolResults.some(tr => tr.result?.encaminhado);
-        
+        const humanHandoff = toolResults.some((tr) => tr.result?.encaminhado);
+
         return new Response(
           JSON.stringify({
             message: interceptMessage,
             humanHandoff,
-            toolsUsed: toolResults.map(tr => ({
+            toolsUsed: toolResults.map((tr) => ({
               name: tr.toolCall.function.name,
               result: tr.result,
             })),
@@ -764,15 +810,16 @@ ${examTypes.map(e => {
       }
 
       const finalData = await finalResponse.json();
-      const finalContent = finalData.choices?.[0]?.message?.content || "Desculpe, não consegui processar sua solicitação.";
+      const finalContent =
+        finalData.choices?.[0]?.message?.content || "Desculpe, não consegui processar sua solicitação.";
 
-      const humanHandoff = toolResults.some(tr => tr.result?.encaminhado);
+      const humanHandoff = toolResults.some((tr) => tr.result?.encaminhado);
 
       return new Response(
         JSON.stringify({
           message: finalContent,
           humanHandoff,
-          toolsUsed: toolResults.map(tr => ({
+          toolsUsed: toolResults.map((tr) => ({
             name: tr.toolCall.function.name,
             result: tr.result,
           })),
