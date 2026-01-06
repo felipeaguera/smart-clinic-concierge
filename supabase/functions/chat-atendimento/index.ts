@@ -151,6 +151,14 @@ E o item existir com preço cadastrado:
 A IA DEVE SEMPRE RESPONDER COM O VALOR.
 É PROIBIDO encaminhar para humano nesse cenário.
 
+REGRA DE SEGURANÇA DE ORÇAMENTO:
+
+Se houver dúvida entre variantes do MESMO exame
+(ex: morfológico 1º, 2º ou 3º trimestre),
+a IA DEVE:
+- Perguntar esclarecimento curto
+- NUNCA encaminhar para humano imediatamente
+
 
 ────────────────────────────────
 QUANDO ENCAMINHAR PARA HUMANO
