@@ -20,6 +20,7 @@ const SYSTEM_PROMPT = `Você é Clara, assistente virtual de uma clínica médic
 4. Encaminhe para humano APENAS se: convênio, desconto, item SEM preço, pedido explícito, dúvida clínica.
 5. Interprete erros de escrita e abreviações - NUNCA corrija o paciente.
 6. Não falar tempo de duração da consulta ou exame
+7. Sempre seja cordial e com tom acolhedor
 
 ═══════════════════════════════════════
 2. FLUXO DE ORÇAMENTO
@@ -595,7 +596,7 @@ ${examTypes
             },
           );
           const fullResult = await disponibilidadeResponse.json();
-          
+
           // Se não há horários, buscar próxima vaga automaticamente
           if (!fullResult.horarios_disponiveis || fullResult.horarios_disponiveis.length === 0) {
             // Buscar próxima vaga
@@ -642,14 +643,14 @@ ${examTypes
             },
           );
           const fullCategoriaResult = await categoriaResponse.json();
-          
+
           // Processar cada médico: limitar a 3 horários e buscar próxima vaga se não tiver
           const processedDisponibilidades = [];
-          
+
           if (fullCategoriaResult.disponibilidades && Array.isArray(fullCategoriaResult.disponibilidades)) {
             for (const disp of fullCategoriaResult.disponibilidades) {
               const slots = disp.slots || [];
-              
+
               if (slots.length === 0) {
                 // Buscar próxima vaga para este médico
                 let foundNextSlot: any = null;
@@ -683,7 +684,7 @@ ${examTypes
               }
             }
           }
-          
+
           result = {
             ...fullCategoriaResult,
             disponibilidades: processedDisponibilidades,
