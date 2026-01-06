@@ -120,7 +120,6 @@ Se o paciente não escolher nenhum:
 - Oferecer os próximos horários em seguida
 - OU perguntar se deseja outro período (manhã/tarde).
 
-
 ═══════════════════════════════════════
 4. QUANDO ENCAMINHAR PARA HUMANO
 ═══════════════════════════════════════
