@@ -592,7 +592,44 @@ ${examTypes
               headers: { Authorization: `Bearer ${supabaseKey}` },
             },
           );
-          result = await disponibilidadeResponse.json();
+          const fullResult = await disponibilidadeResponse.json();
+          
+          // Se não há horários, buscar próxima vaga automaticamente
+          if (!fullResult.horarios_disponiveis || fullResult.horarios_disponiveis.length === 0) {
+            // Buscar próxima vaga
+            let foundNextSlot: any = null;
+            for (let i = 1; i <= 30; i++) {
+              const nextDate = addDaysISO(args.data, i);
+              const nextResponse = await fetch(
+                `${supabaseUrl}/functions/v1/agenda-disponibilidade?doctor_id=${args.doctor_id}&exam_type_id=${args.exam_type_id}&data=${nextDate}`,
+                { headers: { Authorization: `Bearer ${supabaseKey}` } },
+              );
+              const nextJson = await nextResponse.json();
+              if (nextJson.horarios_disponiveis && nextJson.horarios_disponiveis.length > 0) {
+                foundNextSlot = {
+                  data: nextDate,
+                  horarios_disponiveis: nextJson.horarios_disponiveis.slice(0, 3),
+                  doctor: nextJson.doctor,
+                };
+                break;
+              }
+            }
+            result = {
+              ...fullResult,
+              horarios_disponiveis: [],
+              proxima_vaga: foundNextSlot,
+              mensagem_proxima_vaga: foundNextSlot
+                ? `Não há horários para a data solicitada. A próxima vaga disponível é em ${foundNextSlot.data}.`
+                : "Não há horários disponíveis nos próximos 30 dias.",
+            };
+          } else {
+            // Limitar a 3 horários
+            result = {
+              ...fullResult,
+              horarios_disponiveis: fullResult.horarios_disponiveis.slice(0, 3),
+              total_horarios_disponiveis: fullResult.horarios_disponiveis.length,
+            };
+          }
           console.log("Disponibilidade result:", result);
         } else if (functionName === "buscar_disponibilidade_categoria") {
           // Nova função que busca TODOS os médicos de uma categoria
@@ -602,7 +639,53 @@ ${examTypes
               headers: { Authorization: `Bearer ${supabaseKey}` },
             },
           );
-          result = await categoriaResponse.json();
+          const fullCategoriaResult = await categoriaResponse.json();
+          
+          // Processar cada médico: limitar a 3 horários e buscar próxima vaga se não tiver
+          const processedDisponibilidades = [];
+          
+          if (fullCategoriaResult.disponibilidades && Array.isArray(fullCategoriaResult.disponibilidades)) {
+            for (const disp of fullCategoriaResult.disponibilidades) {
+              const slots = disp.slots || [];
+              
+              if (slots.length === 0) {
+                // Buscar próxima vaga para este médico
+                let foundNextSlot: any = null;
+                for (let i = 1; i <= 30; i++) {
+                  const nextDate = addDaysISO(args.data, i);
+                  const nextResponse = await fetch(
+                    `${supabaseUrl}/functions/v1/agenda-disponibilidade?doctor_id=${disp.doctor_id}&exam_type_id=${args.exam_type_id}&data=${nextDate}`,
+                    { headers: { Authorization: `Bearer ${supabaseKey}` } },
+                  );
+                  const nextJson = await nextResponse.json();
+                  if (nextJson.horarios_disponiveis && nextJson.horarios_disponiveis.length > 0) {
+                    foundNextSlot = {
+                      data: nextDate,
+                      horarios: nextJson.horarios_disponiveis.slice(0, 3),
+                    };
+                    break;
+                  }
+                }
+                processedDisponibilidades.push({
+                  ...disp,
+                  slots: [],
+                  proxima_vaga: foundNextSlot,
+                });
+              } else {
+                // Limitar a 3 horários
+                processedDisponibilidades.push({
+                  ...disp,
+                  slots: slots.slice(0, 3),
+                  total_slots: slots.length,
+                });
+              }
+            }
+          }
+          
+          result = {
+            ...fullCategoriaResult,
+            disponibilidades: processedDisponibilidades,
+          };
           console.log("Disponibilidade categoria result:", result);
         } else if (functionName === "buscar_proxima_vaga") {
           const maxDias = typeof args.max_dias === "number" && args.max_dias > 0 ? Math.min(args.max_dias, 90) : 30;
