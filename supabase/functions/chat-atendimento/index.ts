@@ -153,6 +153,16 @@ FORMATAÇÃO:
 ⚠️ INTERNAMENTE: sempre YYYY-MM-DD (ex: 2026-01-06)
 ⚠️ PARA O PACIENTE: sempre DD/MM/YYYY (ex: 06/01/2026)
 
+ÂNCORA TEMPORAL (OBRIGATÓRIA):
+
+A IA deve considerar como "HOJE" a data informada no contexto inicial da conversa,
+e manter essa referência fixa durante TODA a conversa.
+
+A IA NÃO deve recalcular “hoje” a cada mensagem.
+A IA NÃO deve avançar a data automaticamente sem confirmação explícita do paciente.
+
+Se houver qualquer dúvida temporal, a IA deve PERGUNTAR antes de assumir.
+
 ────────────────────────────────
 CONFIRMAÇÃO DE RESERVA
 ────────────────────────────────
@@ -217,11 +227,11 @@ serve(async (req) => {
   }
 
   try {
-    const { messages, context } = await req.json() as { 
-      messages: Message[]; 
-      context?: ConversationContext 
+    const { messages, context } = (await req.json()) as {
+      messages: Message[];
+      context?: ConversationContext;
     };
-    
+
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) {
       throw new Error("LOVABLE_API_KEY is not configured");
@@ -234,66 +244,83 @@ serve(async (req) => {
     // Fetch available data for context
     const [doctorsResult, examTypesResult] = await Promise.all([
       supabase.from("doctors").select("id, nome, especialidade").eq("ativo", true),
-      supabase.from("exam_types").select("id, nome, categoria, duracao_minutos, preparo, orientacoes, has_price, price_private, currency").eq("ativo", true)
+      supabase
+        .from("exam_types")
+        .select("id, nome, categoria, duracao_minutos, preparo, orientacoes, has_price, price_private, currency")
+        .eq("ativo", true),
     ]);
 
     const doctors = doctorsResult.data || [];
     const examTypes = examTypesResult.data || [];
 
     // Build context information with exam details including pricing
-    const examTypesInfo = examTypes.map(e => {
-      let info = `- ${e.nome} (${e.categoria}) [ID: ${e.id}]`;
-      
-      // Add pricing info
-      if (e.has_price && e.price_private) {
-        const formattedPrice = new Intl.NumberFormat('pt-BR', { 
-          style: 'currency', 
-          currency: e.currency || 'BRL' 
-        }).format(e.price_private);
-        info += `\n  Valor: ${formattedPrice} (has_price: true)`;
-      } else {
-        info += `\n  Valor: NÃO CADASTRADO (has_price: false) - encaminhar para humano`;
-      }
-      
-      // Add duration (only for non-lab exams)
-      if (e.categoria !== 'laboratorio' && e.duracao_minutos) {
-        info += `\n  Duração: ${e.duracao_minutos} minutos`;
-      }
-      
-      if (e.preparo) {
-        info += `\n  Preparo: ${e.preparo}`;
-      }
-      if (e.orientacoes) {
-        info += `\n  Orientações: ${e.orientacoes}`;
-      }
-      return info;
-    }).join("\n\n");
+    const examTypesInfo = examTypes
+      .map((e) => {
+        let info = `- ${e.nome} (${e.categoria}) [ID: ${e.id}]`;
+
+        // Add pricing info
+        if (e.has_price && e.price_private) {
+          const formattedPrice = new Intl.NumberFormat("pt-BR", {
+            style: "currency",
+            currency: e.currency || "BRL",
+          }).format(e.price_private);
+          info += `\n  Valor: ${formattedPrice} (has_price: true)`;
+        } else {
+          info += `\n  Valor: NÃO CADASTRADO (has_price: false) - encaminhar para humano`;
+        }
+
+        // Add duration (only for non-lab exams)
+        if (e.categoria !== "laboratorio" && e.duracao_minutos) {
+          info += `\n  Duração: ${e.duracao_minutos} minutos`;
+        }
+
+        if (e.preparo) {
+          info += `\n  Preparo: ${e.preparo}`;
+        }
+        if (e.orientacoes) {
+          info += `\n  Orientações: ${e.orientacoes}`;
+        }
+        return info;
+      })
+      .join("\n\n");
 
     // Get current date for natural language date interpretation
     const now = new Date();
-    const currentDate = now.toISOString().split('T')[0];
-    const weekdays = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado'];
+    const currentDate = now.toISOString().split("T")[0];
+    const weekdays = [
+      "domingo",
+      "segunda-feira",
+      "terça-feira",
+      "quarta-feira",
+      "quinta-feira",
+      "sexta-feira",
+      "sábado",
+    ];
     const currentWeekday = weekdays[now.getDay()];
-    const formattedDate = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`;
+    const formattedDate = `${now.getDate().toString().padStart(2, "0")}/${(now.getMonth() + 1).toString().padStart(2, "0")}/${now.getFullYear()}`;
 
     const contextInfo = `
 DATA ATUAL DO SISTEMA: ${currentDate} (${currentWeekday}, ${formattedDate})
 Use esta data como referência para interpretar datas em linguagem natural.
 
 MÉDICOS DISPONÍVEIS:
-${doctors.map(d => `- ${d.nome} (${d.especialidade}) [ID: ${d.id}]`).join("\n")}
+${doctors.map((d) => `- ${d.nome} (${d.especialidade}) [ID: ${d.id}]`).join("\n")}
 
 TIPOS DE EXAME (com preparo e orientações):
 ${examTypesInfo}
 
 IMPORTANTE: Verifique o campo has_price de cada exame. Se has_price = false, encaminhar para humano para valores.
 
-${context ? `CONTEXTO DA CONVERSA ATUAL:
+${
+  context
+    ? `CONTEXTO DA CONVERSA ATUAL:
 - Médico selecionado: ${context.selectedDoctorId || "nenhum"}
 - Exame selecionado: ${context.selectedExamTypeId || "nenhum"}
 - Data selecionada: ${context.selectedDate || "nenhuma"}
 - Horário selecionado: ${context.selectedTime || "nenhum"}
-- Aguardando confirmação: ${context.awaitingConfirmation ? "sim" : "não"}` : ""}
+- Aguardando confirmação: ${context.awaitingConfirmation ? "sim" : "não"}`
+    : ""
+}
 `;
 
     // Define tools for the AI
@@ -302,27 +329,28 @@ ${context ? `CONTEXTO DA CONVERSA ATUAL:
         type: "function",
         function: {
           name: "buscar_disponibilidade",
-          description: "Busca horários disponíveis para agendamento. Use quando o paciente quiser agendar consulta ou ultrassom.",
+          description:
+            "Busca horários disponíveis para agendamento. Use quando o paciente quiser agendar consulta ou ultrassom.",
           parameters: {
             type: "object",
             properties: {
               doctor_id: {
                 type: "string",
-                description: "UUID do médico"
+                description: "UUID do médico",
               },
               exam_type_id: {
                 type: "string",
-                description: "UUID do tipo de exame"
+                description: "UUID do tipo de exame",
               },
               data: {
                 type: "string",
-                description: "Data no formato YYYY-MM-DD"
-              }
+                description: "Data no formato YYYY-MM-DD",
+              },
             },
             required: ["doctor_id", "exam_type_id", "data"],
-            additionalProperties: false
-          }
-        }
+            additionalProperties: false,
+          },
+        },
       },
       {
         type: "function",
@@ -334,48 +362,49 @@ ${context ? `CONTEXTO DA CONVERSA ATUAL:
             properties: {
               doctor_id: {
                 type: "string",
-                description: "UUID do médico"
+                description: "UUID do médico",
               },
               exam_type_id: {
                 type: "string",
-                description: "UUID do tipo de exame"
+                description: "UUID do tipo de exame",
               },
               data: {
                 type: "string",
-                description: "Data no formato YYYY-MM-DD"
+                description: "Data no formato YYYY-MM-DD",
               },
               hora_inicio: {
                 type: "string",
-                description: "Hora de início no formato HH:MM"
+                description: "Hora de início no formato HH:MM",
               },
               hora_fim: {
                 type: "string",
-                description: "Hora de fim no formato HH:MM"
-              }
+                description: "Hora de fim no formato HH:MM",
+              },
             },
             required: ["doctor_id", "exam_type_id", "data", "hora_inicio", "hora_fim"],
-            additionalProperties: false
-          }
-        }
+            additionalProperties: false,
+          },
+        },
       },
       {
         type: "function",
         function: {
           name: "encaminhar_humano",
-          description: "Encaminha a conversa para um atendente humano. Use quando: paciente pedir, dúvida clínica, pedido de encaixe, exame não reconhecido.",
+          description:
+            "Encaminha a conversa para um atendente humano. Use quando: paciente pedir, dúvida clínica, pedido de encaixe, exame não reconhecido.",
           parameters: {
             type: "object",
             properties: {
               motivo: {
                 type: "string",
-                description: "Motivo do encaminhamento"
-              }
+                description: "Motivo do encaminhamento",
+              },
             },
             required: ["motivo"],
-            additionalProperties: false
-          }
-        }
-      }
+            additionalProperties: false,
+          },
+        },
+      },
     ];
 
     // First AI call to get response or tool calls
@@ -387,10 +416,7 @@ ${context ? `CONTEXTO DA CONVERSA ATUAL:
       },
       body: JSON.stringify({
         model: "google/gemini-2.5-flash",
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT + "\n\n" + contextInfo },
-          ...messages,
-        ],
+        messages: [{ role: "system", content: SYSTEM_PROMPT + "\n\n" + contextInfo }, ...messages],
         tools,
         tool_choice: "auto",
       }),
@@ -416,7 +442,7 @@ ${context ? `CONTEXTO DA CONVERSA ATUAL:
 
     const aiData = await aiResponse.json();
     const choice = aiData.choices?.[0];
-    
+
     if (!choice) {
       throw new Error("Resposta inválida da IA");
     }
@@ -441,39 +467,34 @@ ${context ? `CONTEXTO DA CONVERSA ATUAL:
               headers: {
                 Authorization: `Bearer ${supabaseKey}`,
               },
-            }
+            },
           );
           result = await disponibilidadeResponse.json();
           console.log("Disponibilidade result:", result);
-        } 
-        else if (functionName === "reservar_horario") {
+        } else if (functionName === "reservar_horario") {
           // Call the agenda-reservar function
-          const reservarResponse = await fetch(
-            `${supabaseUrl}/functions/v1/agenda-reservar`,
-            {
-              method: "POST",
-              headers: {
-                Authorization: `Bearer ${supabaseKey}`,
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                doctor_id: args.doctor_id,
-                exam_type_id: args.exam_type_id,
-                data: args.data,
-                hora_inicio: args.hora_inicio,
-                hora_fim: args.hora_fim,
-              }),
-            }
-          );
+          const reservarResponse = await fetch(`${supabaseUrl}/functions/v1/agenda-reservar`, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${supabaseKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              doctor_id: args.doctor_id,
+              exam_type_id: args.exam_type_id,
+              data: args.data,
+              hora_inicio: args.hora_inicio,
+              hora_fim: args.hora_fim,
+            }),
+          });
           result = await reservarResponse.json();
           console.log("Reservar result:", result);
-        }
-        else if (functionName === "encaminhar_humano") {
+        } else if (functionName === "encaminhar_humano") {
           result = {
             success: true,
             message: "Conversa encaminhada para atendente humano.",
             motivo: args.motivo,
-            encaminhado: true
+            encaminhado: true,
           };
         }
 
@@ -512,38 +533,47 @@ ${context ? `CONTEXTO DA CONVERSA ATUAL:
       }
 
       const finalData = await finalResponse.json();
-      const finalContent = finalData.choices?.[0]?.message?.content || "Desculpe, não consegui processar sua solicitação.";
+      const finalContent =
+        finalData.choices?.[0]?.message?.content || "Desculpe, não consegui processar sua solicitação.";
 
       // Check if human handoff was triggered
-      const humanHandoff = toolResults.some(tr => tr.result?.encaminhado);
+      const humanHandoff = toolResults.some((tr) => tr.result?.encaminhado);
 
-      return new Response(JSON.stringify({ 
-        message: finalContent,
-        humanHandoff,
-        toolsUsed: toolResults.map(tr => ({
-          name: tr.toolCall.function.name,
-          result: tr.result
-        }))
-      }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({
+          message: finalContent,
+          humanHandoff,
+          toolsUsed: toolResults.map((tr) => ({
+            name: tr.toolCall.function.name,
+            result: tr.result,
+          })),
+        }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
     }
 
     // No tool calls, return direct response
-    return new Response(JSON.stringify({ 
-      message: choice.message?.content || "Olá! Como posso ajudá-lo hoje?",
-      humanHandoff: false
-    }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-
+    return new Response(
+      JSON.stringify({
+        message: choice.message?.content || "Olá! Como posso ajudá-lo hoje?",
+        humanHandoff: false,
+      }),
+      {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
+    );
   } catch (error) {
     console.error("Chat error:", error);
-    return new Response(JSON.stringify({ 
-      error: error instanceof Error ? error.message : "Erro desconhecido" 
-    }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({
+        error: error instanceof Error ? error.message : "Erro desconhecido",
+      }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
+    );
   }
 });
