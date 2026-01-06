@@ -66,7 +66,10 @@ export function AgendaSlot({
   disabled,
 }: AgendaSlotProps) {
   if (!isAvailable && appointment) {
-    const durationMinutes = appointment.exam_types?.duracao_minutos || 30;
+    // Calcula duração real a partir de hora_inicio e hora_fim
+    const [startH, startM] = time.split(':').map(Number);
+    const [endH, endM] = endTime.split(':').map(Number);
+    const durationMinutes = (endH * 60 + endM) - (startH * 60 + startM);
     
     return (
       <button
