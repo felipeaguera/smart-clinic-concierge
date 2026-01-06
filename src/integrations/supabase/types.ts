@@ -129,31 +129,40 @@ export type Database = {
           ativo: boolean
           categoria: string
           created_at: string
+          currency: string
           duracao_minutos: number
+          has_price: boolean
           id: string
           nome: string
           orientacoes: string | null
           preparo: string | null
+          price_private: number | null
         }
         Insert: {
           ativo?: boolean
           categoria: string
           created_at?: string
+          currency?: string
           duracao_minutos: number
+          has_price?: boolean
           id?: string
           nome: string
           orientacoes?: string | null
           preparo?: string | null
+          price_private?: number | null
         }
         Update: {
           ativo?: boolean
           categoria?: string
           created_at?: string
+          currency?: string
           duracao_minutos?: number
+          has_price?: boolean
           id?: string
           nome?: string
           orientacoes?: string | null
           preparo?: string | null
+          price_private?: number | null
         }
         Relationships: []
       }
