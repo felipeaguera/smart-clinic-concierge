@@ -41,6 +41,9 @@ interface ExamType {
   ativo: boolean;
   preparo: string | null;
   orientacoes: string | null;
+  has_price: boolean;
+  price_private: number | null;
+  currency: string;
   created_at: string;
 }
 
@@ -59,6 +62,8 @@ export default function TiposExame() {
   const [preparo, setPreparo] = useState('');
   const [orientacoes, setOrientacoes] = useState('');
   const [ativo, setAtivo] = useState(true);
+  const [hasPrice, setHasPrice] = useState(false);
+  const [pricePrivate, setPricePrivate] = useState('');
   const [search, setSearch] = useState('');
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -83,6 +88,8 @@ export default function TiposExame() {
       ativo: boolean;
       preparo: string | null;
       orientacoes: string | null;
+      has_price: boolean;
+      price_private: number | null;
       id?: string;
     }) => {
       const payload = {
@@ -92,6 +99,8 @@ export default function TiposExame() {
         ativo: data.ativo,
         preparo: data.preparo || null,
         orientacoes: data.orientacoes || null,
+        has_price: data.has_price,
+        price_private: data.has_price ? data.price_private : null,
       };
 
       if (data.id) {
@@ -137,6 +146,8 @@ export default function TiposExame() {
     setPreparo('');
     setOrientacoes('');
     setAtivo(true);
+    setHasPrice(false);
+    setPricePrivate('');
   };
 
   const handleEdit = (exam: ExamType) => {
@@ -147,6 +158,8 @@ export default function TiposExame() {
     setPreparo(exam.preparo || '');
     setOrientacoes(exam.orientacoes || '');
     setAtivo(exam.ativo);
+    setHasPrice(exam.has_price);
+    setPricePrivate(exam.price_private !== null ? String(exam.price_private) : '');
     setIsOpen(true);
   };
 
@@ -171,6 +184,20 @@ export default function TiposExame() {
       }
     }
 
+    // Validar preço quando has_price = true
+    let priceValue: number | null = null;
+    if (hasPrice) {
+      if (!pricePrivate.trim()) {
+        toast({ title: 'Erro', description: 'Preencha o valor do exame', variant: 'destructive' });
+        return;
+      }
+      priceValue = parseFloat(pricePrivate.replace(',', '.'));
+      if (isNaN(priceValue) || priceValue <= 0) {
+        toast({ title: 'Erro', description: 'Valor deve ser um número positivo', variant: 'destructive' });
+        return;
+      }
+    }
+
     mutation.mutate({
       nome,
       categoria,
@@ -178,6 +205,8 @@ export default function TiposExame() {
       ativo,
       preparo: preparo.trim() || null,
       orientacoes: orientacoes.trim() || null,
+      has_price: hasPrice,
+      price_private: priceValue,
       id: editingExam?.id,
     });
   };
@@ -277,7 +306,30 @@ export default function TiposExame() {
                   />
                 </div>
 
-                {/* 6. Status (Ativo/Inativo) */}
+                {/* 6. Possui valor definido */}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Switch id="hasPrice" checked={hasPrice} onCheckedChange={setHasPrice} />
+                    <Label htmlFor="hasPrice">Possui valor definido?</Label>
+                  </div>
+                  
+                  {hasPrice && (
+                    <div className="space-y-2 pl-6 border-l-2 border-primary/20">
+                      <Label htmlFor="pricePrivate">Valor particular (R$)</Label>
+                      <Input
+                        id="pricePrivate"
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        value={pricePrivate}
+                        onChange={(e) => setPricePrivate(e.target.value)}
+                        placeholder="250.00"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* 7. Status (Ativo/Inativo) */}
                 <div className="flex items-center gap-2">
                   <Switch id="ativo" checked={ativo} onCheckedChange={setAtivo} />
                   <Label htmlFor="ativo">Ativo</Label>
