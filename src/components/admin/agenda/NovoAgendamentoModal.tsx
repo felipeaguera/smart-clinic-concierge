@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import {
@@ -38,6 +38,8 @@ interface NovoAgendamentoModalProps {
   onClose: () => void;
   selectedDate: Date;
   selectedTime: string;
+  slotEndTime: string;
+  availableMinutes: number;
   doctor: Doctor;
   tipoAtendimento: 'consulta' | 'ultrassom';
   examTypes: ExamType[];
@@ -48,48 +50,81 @@ const STATUS_OPTIONS = [
   { value: 'confirmado', label: 'Confirmado' },
 ];
 
+// Converte time string para minutos
+function timeToMinutes(time: string): number {
+  const [h, m] = time.split(':').map(Number);
+  return h * 60 + m;
+}
+
+// Converte minutos para time string
+function minutesToTime(minutes: number): string {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+}
+
 export function NovoAgendamentoModal({
   isOpen,
   onClose,
   selectedDate,
   selectedTime,
+  slotEndTime,
+  availableMinutes,
   doctor,
   tipoAtendimento,
   examTypes,
 }: NovoAgendamentoModalProps) {
   const [examTypeId, setExamTypeId] = useState('');
+  const [chosenTime, setChosenTime] = useState(selectedTime);
   const [status, setStatus] = useState('reservado');
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  // Filtra exames pela categoria compatível
+  const selectedExam = examTypes.find((e) => e.id === examTypeId);
+
+  // Filtra exames pela categoria compatível E que cabem no tempo restante
   const filteredExamTypes = examTypes.filter((exam) => {
-    if (tipoAtendimento === 'consulta') {
-      return exam.categoria === 'consulta';
-    }
-    return exam.categoria === 'ultrassom';
+    const categoryMatch = tipoAtendimento === 'consulta' 
+      ? exam.categoria === 'consulta' 
+      : exam.categoria === 'ultrassom';
+    
+    // Calcula quanto tempo resta a partir do horário escolhido
+    const chosenMinutes = timeToMinutes(chosenTime);
+    const slotEndMinutes = timeToMinutes(slotEndTime);
+    const remainingMinutes = slotEndMinutes - chosenMinutes;
+    
+    return categoryMatch && exam.duracao_minutos <= remainingMinutes;
   });
+
+  // Gera opções de horário dentro do slot livre (intervalos de 15 min)
+  const timeOptions = useMemo(() => {
+    const options: string[] = [];
+    const startMinutes = timeToMinutes(selectedTime);
+    const endMinutes = timeToMinutes(slotEndTime);
+    
+    // Gera horários de 15 em 15 minutos
+    for (let m = startMinutes; m < endMinutes; m += 15) {
+      options.push(minutesToTime(m));
+    }
+    
+    return options;
+  }, [selectedTime, slotEndTime]);
 
   // Reset form quando modal abre
   useEffect(() => {
     if (isOpen) {
       setExamTypeId('');
+      setChosenTime(selectedTime);
       setStatus('reservado');
     }
-  }, [isOpen]);
+  }, [isOpen, selectedTime]);
 
-  const selectedExam = examTypes.find((e) => e.id === examTypeId);
-
-  // Calcula hora fim baseado na duração do exame
+  // Calcula hora fim baseado na duração do exame e horário escolhido
   const calculateEndTime = (): string => {
     if (!selectedExam) return '';
     
-    const [hours, minutes] = selectedTime.split(':').map(Number);
-    const totalMinutes = hours * 60 + minutes + selectedExam.duracao_minutos;
-    const endHours = Math.floor(totalMinutes / 60);
-    const endMinutes = totalMinutes % 60;
-    
-    return `${endHours.toString().padStart(2, '0')}:${endMinutes.toString().padStart(2, '0')}`;
+    const totalMinutes = timeToMinutes(chosenTime) + selectedExam.duracao_minutos;
+    return minutesToTime(totalMinutes);
   };
 
   const mutation = useMutation({
@@ -100,7 +135,7 @@ export function NovoAgendamentoModal({
         doctor_id: doctor.id,
         exam_type_id: examTypeId,
         data: format(selectedDate, 'yyyy-MM-dd'),
-        hora_inicio: selectedTime,
+        hora_inicio: chosenTime,
         hora_fim: horaFim,
         status,
       });
@@ -146,7 +181,7 @@ export function NovoAgendamentoModal({
         </DialogHeader>
         
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Informações pré-preenchidas (não editáveis) */}
+          {/* Informações pré-preenchidas */}
           <div className="space-y-3 p-4 bg-muted/50 rounded-lg">
             <div className="flex justify-between">
               <span className="text-sm text-muted-foreground">Médico:</span>
@@ -159,16 +194,37 @@ export function NovoAgendamentoModal({
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-sm text-muted-foreground">Horário:</span>
+              <span className="text-sm text-muted-foreground">Período Livre:</span>
               <span className="text-sm font-medium">
-                {selectedTime}
-                {endTime && ` - ${endTime}`}
+                {selectedTime} - {slotEndTime}
               </span>
             </div>
             <div className="flex justify-between">
               <span className="text-sm text-muted-foreground">Tipo:</span>
               <span className="text-sm font-medium capitalize">{tipoAtendimento}</span>
             </div>
+          </div>
+
+          {/* Seletor de Horário */}
+          <div className="space-y-2">
+            <Label>Horário de Início</Label>
+            <Select value={chosenTime} onValueChange={setChosenTime}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {timeOptions.map((time) => (
+                  <SelectItem key={time} value={time}>
+                    {time}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {endTime && (
+              <p className="text-sm text-muted-foreground">
+                Horário final: <span className="font-medium">{endTime}</span>
+              </p>
+            )}
           </div>
 
           {/* Tipo de Exame/Consulta */}
@@ -181,11 +237,17 @@ export function NovoAgendamentoModal({
                 <SelectValue placeholder="Selecione..." />
               </SelectTrigger>
               <SelectContent>
-                {filteredExamTypes.map((exam) => (
-                  <SelectItem key={exam.id} value={exam.id}>
-                    {exam.nome} ({exam.duracao_minutos} min)
-                  </SelectItem>
-                ))}
+                {filteredExamTypes.length > 0 ? (
+                  filteredExamTypes.map((exam) => (
+                    <SelectItem key={exam.id} value={exam.id}>
+                      {exam.nome} ({exam.duracao_minutos} min)
+                    </SelectItem>
+                  ))
+                ) : (
+                  <div className="px-2 py-4 text-sm text-muted-foreground text-center">
+                    Nenhum exame cabe no tempo restante
+                  </div>
+                )}
               </SelectContent>
             </Select>
           </div>
