@@ -33,7 +33,7 @@ interface AgendaGridProps {
   appointments: Appointment[];
   selectedDate: Date;
   tipoAtendimento: 'consulta' | 'ultrassom';
-  onSlotClick: (time: string, availableMinutes: number) => void;
+  onSlotClick: (time: string, availableMinutes: number, endTime: string) => void;
   onAppointmentClick: (appointment: Appointment) => void;
   isLoading?: boolean;
 }
@@ -173,7 +173,7 @@ export function AgendaGrid({
           availableMinutes={slot.availableMinutes}
           isAvailable={slot.type === 'free'}
           appointment={slot.appointment}
-          onClick={() => slot.type === 'free' && onSlotClick(slot.time, slot.availableMinutes)}
+          onClick={() => slot.type === 'free' && onSlotClick(slot.time, slot.availableMinutes, slot.endTime)}
           onAppointmentClick={onAppointmentClick}
         />
       ))}

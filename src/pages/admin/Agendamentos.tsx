@@ -63,6 +63,8 @@ export default function Agendamentos() {
   // Modal states
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedTime, setSelectedTime] = useState('');
+  const [slotEndTime, setSlotEndTime] = useState('');
+  const [availableMinutes, setAvailableMinutes] = useState(0);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
 
@@ -151,8 +153,10 @@ export default function Agendamentos() {
     setSelectedDoctorId(''); // Reset doctor when changing type
   };
 
-  const handleSlotClick = (time: string) => {
+  const handleSlotClick = (time: string, available: number, endTime: string) => {
     setSelectedTime(time);
+    setSlotEndTime(endTime);
+    setAvailableMinutes(available);
     setModalOpen(true);
   };
 
@@ -295,6 +299,8 @@ export default function Agendamentos() {
           onClose={() => setModalOpen(false)}
           selectedDate={selectedDate}
           selectedTime={selectedTime}
+          slotEndTime={slotEndTime}
+          availableMinutes={availableMinutes}
           doctor={selectedDoctor}
           tipoAtendimento={tipoAtendimento}
           examTypes={examTypes || []}
