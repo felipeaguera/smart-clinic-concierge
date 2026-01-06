@@ -58,7 +58,11 @@ PASSO 1: Identificar categoria do exame
 - ULTRASSOM: Usar buscar_disponibilidade_categoria (busca TODOS os médicos de ultrassom)
 - CONSULTA: Se médico não especificado, perguntar qual médico deseja
 
-PASSO 2: PARA ULTRASSONS
+PASSO 2: BUSCA DA PRÓXIMA VAGA (IMPORTANTE)
+- Se o paciente pedir “próxima vaga/horário/data disponível” OU se não houver horários na data consultada,
+  use buscar_proxima_vaga para encontrar automaticamente a PRIMEIRA data com disponibilidade (em vez de ir perguntando dia a dia).
+
+PASSO 3: PARA ULTRASSONS
 1. Chamar buscar_disponibilidade_categoria com exam_type_id + data
 2. Receber lista de TODOS os médicos disponíveis com seus horários
 3. Apresentar de forma clara:
@@ -75,11 +79,11 @@ PASSO 2: PARA ULTRASSONS
 5. Chamar reservar_horario com os dados escolhidos
 6. Após sucesso: informar data/horário + preparo + orientações
 
-PASSO 3: PARA CONSULTAS
+PASSO 4: PARA CONSULTAS
 1. Se paciente especificou médico → usar buscar_disponibilidade direto
 2. Se não especificou → perguntar: "Temos consulta com Dr. X (especialidade) e Dr. Y (especialidade). Qual prefere?"
 3. Após escolha, buscar disponibilidade do médico escolhido
-4. Continuar fluxo normal de agendamento
+4. Se não houver horários, usar buscar_proxima_vaga e oferecer a primeira data disponível
 
 DATAS:
 - Usar DATA ATUAL do contexto como referência fixa
@@ -106,7 +110,7 @@ ENCAMINHAR se:
 NUNCA encaminhar por:
 - Frase confusa ou erro de português
 - Múltiplos itens (se todos têm preço, responda)
-- Agenda cheia em um dia (buscar outro dia)
+- Agenda cheia em um dia (buscar próxima vaga automaticamente)
 
 ═══════════════════════════════════════
 5. TOM DE VOZ
@@ -247,6 +251,12 @@ function extractMentionedItems(
   }
 
   return { foundExams, foundDoctors, unresolved };
+}
+
+function addDaysISO(dateISO: string, days: number): string {
+  const d = new Date(`${dateISO}T00:00:00`);
+  d.setDate(d.getDate() + days);
+  return d.toISOString().split("T")[0];
 }
 
 serve(async (req) => {
@@ -392,6 +402,24 @@ ${examTypes.map(e => {
       {
         type: "function",
         function: {
+          name: "buscar_proxima_vaga",
+          description: "Encontra automaticamente a próxima data com horários disponíveis (evita avançar dia a dia). Use quando o paciente pedir 'próxima vaga/data/horário disponível' OU quando não houver horários na data consultada.",
+          parameters: {
+            type: "object",
+            properties: {
+              exam_type_id: { type: "string", description: "UUID do tipo de exame" },
+              data_inicial: { type: "string", description: "Data inicial para busca (YYYY-MM-DD)" },
+              doctor_id: { type: "string", description: "UUID do médico (opcional). Se não informado, busca por categoria e retorna o primeiro dia com qualquer médico." },
+              max_dias: { type: "number", description: "Quantos dias à frente buscar (padrão 30)." },
+            },
+            required: ["exam_type_id", "data_inicial"],
+            additionalProperties: false,
+          },
+        },
+      },
+      {
+        type: "function",
+        function: {
           name: "reservar_horario",
           description: "Reserva um horário. SOMENTE usar após confirmação EXPLÍCITA do paciente.",
           parameters: {
@@ -500,6 +528,54 @@ ${examTypes.map(e => {
           );
           result = await categoriaResponse.json();
           console.log("Disponibilidade categoria result:", result);
+        } else if (functionName === "buscar_proxima_vaga") {
+          const maxDias = typeof args.max_dias === "number" && args.max_dias > 0 ? Math.min(args.max_dias, 90) : 30;
+          const startDate = args.data_inicial;
+
+          const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+          if (!dateRegex.test(startDate)) {
+            result = { error: "Formato de data inválido. Use YYYY-MM-DD", data_inicial: startDate };
+          } else {
+            let found: any = null;
+
+            for (let i = 0; i <= maxDias; i++) {
+              const date = addDaysISO(startDate, i);
+
+              if (args.doctor_id) {
+                const r = await fetch(
+                  `${supabaseUrl}/functions/v1/agenda-disponibilidade?doctor_id=${args.doctor_id}&exam_type_id=${args.exam_type_id}&data=${date}`,
+                  { headers: { Authorization: `Bearer ${supabaseKey}` } },
+                );
+                const json = await r.json();
+                const slots = json?.horarios_disponiveis || [];
+                if (Array.isArray(slots) && slots.length > 0) {
+                  found = { modo: "doctor", data: date, doctor_id: args.doctor_id, horarios_disponiveis: slots };
+                  break;
+                }
+              } else {
+                const r = await fetch(
+                  `${supabaseUrl}/functions/v1/agenda-disponibilidade-categoria?exam_type_id=${args.exam_type_id}&data=${date}`,
+                  { headers: { Authorization: `Bearer ${supabaseKey}` } },
+                );
+                const json = await r.json();
+                const disponibilidades = json?.disponibilidades || [];
+                if (Array.isArray(disponibilidades) && disponibilidades.length > 0) {
+                  found = { modo: "categoria", data: date, disponibilidades };
+                  break;
+                }
+              }
+            }
+
+            result =
+              found ||
+              {
+                success: false,
+                message: `Nenhuma disponibilidade encontrada nos próximos ${maxDias} dias.`,
+                data_inicial: startDate,
+              };
+          }
+
+          console.log("Próxima vaga result:", result);
         } else if (functionName === "reservar_horario") {
           const reservarResponse = await fetch(`${supabaseUrl}/functions/v1/agenda-reservar`, {
             method: "POST",
