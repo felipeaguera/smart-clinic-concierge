@@ -60,7 +60,8 @@ PASSO 1: Identificar categoria do exame
 
 PASSO 2: BUSCA DA PRÓXIMA VAGA (IMPORTANTE)
 - Se o paciente pedir “próxima vaga/horário/data disponível” OU se não houver horários na data consultada,
-  use buscar_proxima_vaga para encontrar automaticamente a PRIMEIRA data com disponibilidade (em vez de ir perguntando dia a dia).
+  use buscar_proxima_vaga para encontrar automaticamente a PRIMEIRA disponibilidade.
+- Se o pedido for “próximo HORÁRIO” (ainda hoje), passe hora_minima (ex: hora atual) para evitar sugerir horários no passado.
 
 PASSO 3: PARA ULTRASSONS
 1. Chamar buscar_disponibilidade_categoria com exam_type_id + data
@@ -410,6 +411,7 @@ ${examTypes.map(e => {
               exam_type_id: { type: "string", description: "UUID do tipo de exame" },
               data_inicial: { type: "string", description: "Data inicial para busca (YYYY-MM-DD)" },
               doctor_id: { type: "string", description: "UUID do médico (opcional). Se não informado, busca por categoria e retorna o primeiro dia com qualquer médico." },
+              hora_minima: { type: "string", description: "Hora mínima HH:MM (opcional). Para buscar o próximo horário ainda no mesmo dia." },
               max_dias: { type: "number", description: "Quantos dias à frente buscar (padrão 30)." },
             },
             required: ["exam_type_id", "data_inicial"],
@@ -529,17 +531,43 @@ ${examTypes.map(e => {
           result = await categoriaResponse.json();
           console.log("Disponibilidade categoria result:", result);
         } else if (functionName === "buscar_proxima_vaga") {
-          const maxDias = typeof args.max_dias === "number" && args.max_dias > 0 ? Math.min(args.max_dias, 90) : 30;
+          const maxDias =
+            typeof args.max_dias === "number" && args.max_dias > 0 ? Math.min(args.max_dias, 90) : 30;
           const startDate = args.data_inicial;
 
           const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
           if (!dateRegex.test(startDate)) {
             result = { error: "Formato de data inválido. Use YYYY-MM-DD", data_inicial: startDate };
           } else {
+            const timeToMinutes = (time: string) => {
+              const m = /^\d{1,2}:\d{2}$/.exec(time?.trim?.() || "");
+              if (!m) return NaN;
+              const [hh, mm] = time.split(":").map((v) => Number(v));
+              if (Number.isNaN(hh) || Number.isNaN(mm)) return NaN;
+              return hh * 60 + mm;
+            };
+
+            const nowMinutes = now.getHours() * 60 + now.getMinutes();
+
+            const computeMinMinutesForDay0 = (date: string) => {
+              // Só faz sentido filtrar no DIA 0 (data_inicial)
+              // - Se o paciente deu hora_minima, use.
+              // - Se for o dia de hoje, não sugerir horários no passado.
+              const provided = typeof args.hora_minima === "string" ? timeToMinutes(args.hora_minima) : NaN;
+              const providedValid = Number.isFinite(provided);
+
+              let min = providedValid ? provided : NaN;
+              if (date === currentDate) {
+                min = Number.isFinite(min) ? Math.max(min, nowMinutes + 1) : nowMinutes + 1;
+              }
+              return Number.isFinite(min) ? min : null;
+            };
+
             let found: any = null;
 
             for (let i = 0; i <= maxDias; i++) {
               const date = addDaysISO(startDate, i);
+              const minMinutes = i === 0 ? computeMinMinutesForDay0(date) : null;
 
               if (args.doctor_id) {
                 const r = await fetch(
@@ -547,8 +575,17 @@ ${examTypes.map(e => {
                   { headers: { Authorization: `Bearer ${supabaseKey}` } },
                 );
                 const json = await r.json();
-                const slots = json?.horarios_disponiveis || [];
-                if (Array.isArray(slots) && slots.length > 0) {
+                const slotsRaw = json?.horarios_disponiveis || [];
+                const slots = Array.isArray(slotsRaw)
+                  ? (minMinutes == null
+                      ? slotsRaw
+                      : slotsRaw.filter((s: any) => {
+                          const m = timeToMinutes(String(s?.hora_inicio || ""));
+                          return Number.isFinite(m) && m >= minMinutes;
+                        }))
+                  : [];
+
+                if (slots.length > 0) {
                   found = { modo: "doctor", data: date, doctor_id: args.doctor_id, horarios_disponiveis: slots };
                   break;
                 }
@@ -558,8 +595,40 @@ ${examTypes.map(e => {
                   { headers: { Authorization: `Bearer ${supabaseKey}` } },
                 );
                 const json = await r.json();
-                const disponibilidades = json?.disponibilidades || [];
-                if (Array.isArray(disponibilidades) && disponibilidades.length > 0) {
+                const disponRaw = json?.disponibilidades || [];
+
+                const disponibilidades = Array.isArray(disponRaw)
+                  ? disponRaw
+                      .map((d: any) => {
+                        const slotsKey = Array.isArray(d?.slots)
+                          ? "slots"
+                          : Array.isArray(d?.horarios_disponiveis)
+                            ? "horarios_disponiveis"
+                            : null;
+                        if (!slotsKey) return d;
+
+                        const slotsArr = d[slotsKey];
+                        const filtered =
+                          minMinutes == null
+                            ? slotsArr
+                            : slotsArr.filter((s: any) => {
+                                const m = timeToMinutes(String(s?.hora_inicio || ""));
+                                return Number.isFinite(m) && m >= minMinutes;
+                              });
+
+                        return { ...d, [slotsKey]: filtered };
+                      })
+                      .filter((d: any) => {
+                        const arr = Array.isArray(d?.slots)
+                          ? d.slots
+                          : Array.isArray(d?.horarios_disponiveis)
+                            ? d.horarios_disponiveis
+                            : [];
+                        return Array.isArray(arr) && arr.length > 0;
+                      })
+                  : [];
+
+                if (disponibilidades.length > 0) {
                   found = { modo: "categoria", data: date, disponibilidades };
                   break;
                 }
