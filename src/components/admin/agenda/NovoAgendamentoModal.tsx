@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
@@ -74,6 +75,8 @@ export function NovoAgendamentoModal({
   tipoAtendimento,
   examTypes,
 }: NovoAgendamentoModalProps) {
+  const [pacienteNome, setPacienteNome] = useState('');
+  const [pacienteTelefone, setPacienteTelefone] = useState('');
   const [examTypeId, setExamTypeId] = useState('');
   const [chosenTime, setChosenTime] = useState(selectedTime);
   const [status, setStatus] = useState('reservado');
@@ -113,6 +116,8 @@ export function NovoAgendamentoModal({
   // Reset form quando modal abre
   useEffect(() => {
     if (isOpen) {
+      setPacienteNome('');
+      setPacienteTelefone('');
       setExamTypeId('');
       setChosenTime(selectedTime);
       setStatus('reservado');
@@ -138,6 +143,8 @@ export function NovoAgendamentoModal({
         hora_inicio: chosenTime,
         hora_fim: horaFim,
         status,
+        paciente_nome: pacienteNome.trim() || null,
+        paciente_telefone: pacienteTelefone.trim() || null,
       });
       
       if (error) throw error;
@@ -159,6 +166,15 @@ export function NovoAgendamentoModal({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
+    if (!pacienteNome.trim()) {
+      toast({
+        title: 'Erro',
+        description: 'Informe o nome do paciente',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     if (!examTypeId) {
       toast({
         title: 'Erro',
@@ -202,6 +218,33 @@ export function NovoAgendamentoModal({
             <div className="flex justify-between">
               <span className="text-sm text-muted-foreground">Tipo:</span>
               <span className="text-sm font-medium capitalize">{tipoAtendimento}</span>
+            </div>
+          </div>
+
+          {/* Dados do Paciente */}
+          <div className="space-y-4 border-t pt-4">
+            <h4 className="font-medium text-sm text-foreground">Dados do Paciente</h4>
+            
+            <div className="space-y-2">
+              <Label htmlFor="paciente-nome">Nome Completo *</Label>
+              <Input
+                id="paciente-nome"
+                value={pacienteNome}
+                onChange={(e) => setPacienteNome(e.target.value)}
+                placeholder="Nome do paciente"
+                maxLength={100}
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="paciente-telefone">Telefone</Label>
+              <Input
+                id="paciente-telefone"
+                value={pacienteTelefone}
+                onChange={(e) => setPacienteTelefone(e.target.value)}
+                placeholder="(00) 00000-0000"
+                maxLength={20}
+              />
             </div>
           </div>
 
@@ -274,7 +317,7 @@ export function NovoAgendamentoModal({
             <Button type="button" variant="outline" onClick={onClose}>
               Cancelar
             </Button>
-            <Button type="submit" disabled={mutation.isPending || !examTypeId}>
+            <Button type="submit" disabled={mutation.isPending || !examTypeId || !pacienteNome.trim()}>
               {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Confirmar Agendamento
             </Button>
