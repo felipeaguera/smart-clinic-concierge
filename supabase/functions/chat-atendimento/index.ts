@@ -79,8 +79,9 @@ PASSO 3: PARA ULTRASSONS
    
    Qual prefere?"
 4. AGUARDAR escolha do paciente (médico + horário)
-5. Chamar reservar_horario com os dados escolhidos
-6. Após sucesso: informar data/horário + preparo + orientações
+5. ANTES de reservar, PERGUNTAR O NOME COMPLETO DO PACIENTE
+6. Chamar reservar_horario com os dados escolhidos + paciente_nome
+7. Após sucesso: informar data/horário + preparo + orientações
 
 PASSO 4: PARA CONSULTAS
 1. Se paciente especificou médico → usar buscar_disponibilidade direto
@@ -505,8 +506,9 @@ ${examTypes
               data: { type: "string", description: "Data no formato YYYY-MM-DD" },
               hora_inicio: { type: "string", description: "Hora de início HH:MM" },
               hora_fim: { type: "string", description: "Hora de fim HH:MM" },
+              paciente_nome: { type: "string", description: "Nome completo do paciente" },
             },
-            required: ["doctor_id", "exam_type_id", "data", "hora_inicio", "hora_fim"],
+            required: ["doctor_id", "exam_type_id", "data", "hora_inicio", "hora_fim", "paciente_nome"],
             additionalProperties: false,
           },
         },
@@ -812,6 +814,7 @@ ${examTypes
               data: args.data,
               hora_inicio: args.hora_inicio,
               hora_fim: args.hora_fim,
+              paciente_nome: args.paciente_nome,
             }),
           });
           result = await reservarResponse.json();

@@ -15,6 +15,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { AgendaGrid } from '@/components/admin/agenda/AgendaGrid';
 import { NovoAgendamentoModal } from '@/components/admin/agenda/NovoAgendamentoModal';
+import { EditarAgendamentoModal } from '@/components/admin/agenda/EditarAgendamentoModal';
 import { cn } from '@/lib/utils';
 import { format, addDays, subDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -46,6 +47,8 @@ interface Appointment {
   hora_inicio: string;
   hora_fim: string;
   status: string;
+  paciente_nome?: string | null;
+  paciente_telefone?: string | null;
   exam_types?: { nome: string };
 }
 
@@ -57,9 +60,11 @@ export default function Agendamentos() {
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [calendarOpen, setCalendarOpen] = useState(false);
   
-  // Modal state
+  // Modal states
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedTime, setSelectedTime] = useState('');
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
 
   // Fetch doctors
   const { data: doctors } = useQuery({
@@ -109,7 +114,7 @@ export default function Agendamentos() {
       
       const { data, error } = await supabase
         .from('appointments')
-        .select('id, hora_inicio, hora_fim, status, exam_types(nome)')
+        .select('id, hora_inicio, hora_fim, status, paciente_nome, paciente_telefone, exam_types(nome)')
         .eq('doctor_id', selectedDoctorId)
         .eq('data', format(selectedDate, 'yyyy-MM-dd'));
       
@@ -149,6 +154,11 @@ export default function Agendamentos() {
   const handleSlotClick = (time: string) => {
     setSelectedTime(time);
     setModalOpen(true);
+  };
+
+  const handleAppointmentClick = (appointment: Appointment) => {
+    setSelectedAppointment(appointment);
+    setEditModalOpen(true);
   };
 
   const handlePrevDay = () => setSelectedDate(subDays(selectedDate, 1));
@@ -256,6 +266,7 @@ export default function Agendamentos() {
                 selectedDate={selectedDate}
                 tipoAtendimento={tipoAtendimento}
                 onSlotClick={handleSlotClick}
+                onAppointmentClick={handleAppointmentClick}
                 isLoading={isLoadingAppointments}
               />
             </CardContent>
@@ -287,6 +298,20 @@ export default function Agendamentos() {
           doctor={selectedDoctor}
           tipoAtendimento={tipoAtendimento}
           examTypes={examTypes || []}
+        />
+      )}
+
+      {/* Modal de Editar Agendamento */}
+      {selectedDoctor && (
+        <EditarAgendamentoModal
+          isOpen={editModalOpen}
+          onClose={() => {
+            setEditModalOpen(false);
+            setSelectedAppointment(null);
+          }}
+          appointment={selectedAppointment}
+          doctor={selectedDoctor}
+          selectedDate={selectedDate}
         />
       )}
     </AdminLayout>

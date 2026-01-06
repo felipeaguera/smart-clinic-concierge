@@ -23,6 +23,8 @@ export type Database = {
           hora_fim: string
           hora_inicio: string
           id: string
+          paciente_nome: string | null
+          paciente_telefone: string | null
           status: string
         }
         Insert: {
@@ -33,6 +35,8 @@ export type Database = {
           hora_fim: string
           hora_inicio: string
           id?: string
+          paciente_nome?: string | null
+          paciente_telefone?: string | null
           status?: string
         }
         Update: {
@@ -43,6 +47,8 @@ export type Database = {
           hora_fim?: string
           hora_inicio?: string
           id?: string
+          paciente_nome?: string | null
+          paciente_telefone?: string | null
           status?: string
         }
         Relationships: [
