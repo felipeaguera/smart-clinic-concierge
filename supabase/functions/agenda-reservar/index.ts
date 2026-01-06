@@ -21,9 +21,9 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json()
-    const { doctor_id, exam_type_id, data, hora_inicio, hora_fim } = body
+    const { doctor_id, exam_type_id, data, hora_inicio, hora_fim, paciente_nome, paciente_telefone } = body
 
-    console.log('Payload recebido:', { doctor_id, exam_type_id, data, hora_inicio, hora_fim })
+    console.log('Payload recebido:', { doctor_id, exam_type_id, data, hora_inicio, hora_fim, paciente_nome, paciente_telefone })
 
     // Validar parâmetros obrigatórios
     if (!doctor_id || !exam_type_id || !data || !hora_inicio || !hora_fim) {
@@ -269,7 +269,9 @@ Deno.serve(async (req) => {
         data,
         hora_inicio,
         hora_fim,
-        status: 'reservado'
+        status: 'reservado',
+        paciente_nome: paciente_nome || null,
+        paciente_telefone: paciente_telefone || null
       })
       .select()
       .single()

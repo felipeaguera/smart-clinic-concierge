@@ -15,6 +15,8 @@ interface Appointment {
   hora_inicio: string;
   hora_fim: string;
   status: string;
+  paciente_nome?: string | null;
+  paciente_telefone?: string | null;
   exam_types?: { nome: string };
 }
 
@@ -24,6 +26,7 @@ interface AgendaGridProps {
   selectedDate: Date;
   tipoAtendimento: 'consulta' | 'ultrassom';
   onSlotClick: (time: string) => void;
+  onAppointmentClick: (appointment: Appointment) => void;
   isLoading?: boolean;
 }
 
@@ -44,6 +47,7 @@ export function AgendaGrid({
   selectedDate,
   tipoAtendimento,
   onSlotClick,
+  onAppointmentClick,
   isLoading,
 }: AgendaGridProps) {
   // Gera os slots de 30 em 30 minutos baseado nas regras do médico
@@ -134,6 +138,7 @@ export function AgendaGrid({
             isAvailable={isAvailable}
             appointment={appointment}
             onClick={() => isAvailable && onSlotClick(slot.time)}
+            onAppointmentClick={onAppointmentClick}
           />
         );
       })}
