@@ -1,9 +1,9 @@
 import { useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import {
   Select,
   SelectContent,
@@ -12,14 +12,14 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Calendar } from '@/components/ui/calendar';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { AgendaGrid } from '@/components/admin/agenda/AgendaGrid';
+import { AgendaTimeGrid } from '@/components/admin/agenda/AgendaTimeGrid';
+import { AgendaHeader } from '@/components/admin/agenda/AgendaHeader';
+import { ProximosHorariosLivres } from '@/components/admin/agenda/ProximosHorariosLivres';
 import { NovoAgendamentoModal } from '@/components/admin/agenda/NovoAgendamentoModal';
 import { EditarAgendamentoModal } from '@/components/admin/agenda/EditarAgendamentoModal';
-import { cn } from '@/lib/utils';
 import { format, addDays, subDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { CalendarIcon, ChevronLeft, ChevronRight, Stethoscope, Activity } from 'lucide-react';
+import { Stethoscope, Activity } from 'lucide-react';
 
 interface Doctor {
   id: string;
@@ -55,10 +55,10 @@ interface Appointment {
 type TipoAtendimento = 'consulta' | 'ultrassom';
 
 export default function Agendamentos() {
+  const queryClient = useQueryClient();
   const [tipoAtendimento, setTipoAtendimento] = useState<TipoAtendimento>('consulta');
   const [selectedDoctorId, setSelectedDoctorId] = useState<string>('');
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
-  const [calendarOpen, setCalendarOpen] = useState(false);
   
   // Modal states
   const [modalOpen, setModalOpen] = useState(false);
@@ -126,7 +126,7 @@ export default function Agendamentos() {
     enabled: !!selectedDoctorId,
   });
 
-  // Filtra médicos baseado no tipo de atendimento e suas regras
+  // Filter doctors based on type
   const filteredDoctors = useMemo(() => {
     if (!doctors || !doctorRules) return [];
     
@@ -139,7 +139,7 @@ export default function Agendamentos() {
     });
   }, [doctors, doctorRules, tipoAtendimento]);
 
-  // Regras do médico selecionado
+  // Selected doctor rules
   const selectedDoctorRules = useMemo(() => {
     if (!doctorRules || !selectedDoctorId) return [];
     return doctorRules.filter((r) => r.doctor_id === selectedDoctorId);
@@ -147,10 +147,16 @@ export default function Agendamentos() {
 
   const selectedDoctor = doctors?.find((d) => d.id === selectedDoctorId);
 
+  // Count appointments for the day (excluding cancelled)
+  const appointmentCount = useMemo(() => {
+    if (!appointments) return 0;
+    return appointments.filter(apt => apt.status !== 'cancelado').length;
+  }, [appointments]);
+
   // Handlers
   const handleTipoChange = (tipo: TipoAtendimento) => {
     setTipoAtendimento(tipo);
-    setSelectedDoctorId(''); // Reset doctor when changing type
+    setSelectedDoctorId('');
   };
 
   const handleSlotClick = (time: string, available: number, endTime: string) => {
@@ -167,104 +173,140 @@ export default function Agendamentos() {
 
   const handlePrevDay = () => setSelectedDate(subDays(selectedDate, 1));
   const handleNextDay = () => setSelectedDate(addDays(selectedDate, 1));
+  const handleGoToToday = () => setSelectedDate(new Date());
+
+  const handleNewAppointment = () => {
+    // Find first available slot
+    const dayOfWeek = selectedDate.getDay();
+    const rulesForDay = selectedDoctorRules.filter(
+      (rule) =>
+        rule.dia_semana === dayOfWeek &&
+        (rule.tipo_atendimento === 'ambos' || rule.tipo_atendimento === tipoAtendimento)
+    );
+
+    if (rulesForDay.length > 0) {
+      const earliestRule = rulesForDay.sort((a, b) => 
+        a.hora_inicio.localeCompare(b.hora_inicio)
+      )[0];
+      
+      setSelectedTime(earliestRule.hora_inicio);
+      setSlotEndTime(earliestRule.hora_fim);
+      
+      // Calculate available minutes
+      const [startH, startM] = earliestRule.hora_inicio.split(':').map(Number);
+      const [endH, endM] = earliestRule.hora_fim.split(':').map(Number);
+      setAvailableMinutes((endH * 60 + endM) - (startH * 60 + startM));
+      
+      setModalOpen(true);
+    }
+  };
+
+  const handleProximoHorarioClick = (date: Date, time: string) => {
+    setSelectedDate(date);
+    // Find end time based on rules
+    const dayOfWeek = date.getDay();
+    const rulesForDay = selectedDoctorRules.filter(
+      (rule) =>
+        rule.dia_semana === dayOfWeek &&
+        (rule.tipo_atendimento === 'ambos' || rule.tipo_atendimento === tipoAtendimento)
+    );
+
+    if (rulesForDay.length > 0) {
+      const latestEnd = rulesForDay.reduce((max, rule) => 
+        rule.hora_fim > max ? rule.hora_fim : max
+      , '00:00');
+      
+      const [timeH, timeM] = time.split(':').map(Number);
+      const [endH, endM] = latestEnd.split(':').map(Number);
+      const available = (endH * 60 + endM) - (timeH * 60 + timeM);
+      
+      setSelectedTime(time);
+      setSlotEndTime(latestEnd);
+      setAvailableMinutes(available);
+      setModalOpen(true);
+    }
+  };
 
   return (
     <AdminLayout title="Agenda Visual">
-      <div className="space-y-6">
-        {/* Seletor de Tipo */}
-        <Card className="glass-card">
-          <CardContent className="pt-6">
-            <div className="flex flex-col sm:flex-row gap-4">
-              {/* Toggle Tipo de Atendimento */}
+      <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr_280px] gap-6">
+        {/* Left Column - Calendar and Filters */}
+        <div className="space-y-4">
+          {/* Mini Calendar */}
+          <Card>
+            <CardContent className="p-3">
+              <Calendar
+                mode="single"
+                selected={selectedDate}
+                onSelect={(date) => date && setSelectedDate(date)}
+                locale={ptBR}
+                className="w-full"
+              />
+            </CardContent>
+          </Card>
+
+          {/* Type and Doctor Selectors */}
+          <Card>
+            <CardContent className="p-4 space-y-4">
+              {/* Toggle Tipo */}
               <div className="flex gap-2">
                 <Button
                   variant={tipoAtendimento === 'consulta' ? 'default' : 'outline'}
                   onClick={() => handleTipoChange('consulta')}
-                  className="flex-1 sm:flex-none"
+                  className="flex-1"
+                  size="sm"
                 >
-                  <Stethoscope className="h-4 w-4 mr-2" />
+                  <Stethoscope className="h-4 w-4 mr-1" />
                   Consulta
                 </Button>
                 <Button
                   variant={tipoAtendimento === 'ultrassom' ? 'default' : 'outline'}
                   onClick={() => handleTipoChange('ultrassom')}
-                  className="flex-1 sm:flex-none"
+                  className="flex-1"
+                  size="sm"
                 >
-                  <Activity className="h-4 w-4 mr-2" />
+                  <Activity className="h-4 w-4 mr-1" />
                   Ultrassom
                 </Button>
               </div>
 
-              {/* Seletor de Médico */}
-              <div className="flex-1 max-w-xs">
-                <Select value={selectedDoctorId} onValueChange={setSelectedDoctorId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione o médico" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {filteredDoctors.map((doctor) => (
-                      <SelectItem key={doctor.id} value={doctor.id}>
-                        {doctor.nome}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+              {/* Doctor Selector */}
+              <Select value={selectedDoctorId} onValueChange={setSelectedDoctorId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione o médico" />
+                </SelectTrigger>
+                <SelectContent>
+                  {filteredDoctors.map((doctor) => (
+                    <SelectItem key={doctor.id} value={doctor.id}>
+                      {doctor.nome}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </CardContent>
+          </Card>
+        </div>
 
-        {/* Agenda */}
-        {selectedDoctorId && (
-          <Card className="glass-card">
-            <CardHeader className="pb-4">
-              {/* Navegação de Data */}
-              <div className="flex items-center justify-between">
-                <Button variant="outline" size="icon" onClick={handlePrevDay}>
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
+        {/* Center Column - Schedule Grid */}
+        <div className="space-y-4">
+          {selectedDoctorId ? (
+            <>
+              <Card>
+                <CardContent className="p-4">
+                  <AgendaHeader
+                    selectedDate={selectedDate}
+                    onPrevDay={handlePrevDay}
+                    onNextDay={handleNextDay}
+                    onGoToToday={handleGoToToday}
+                    onNewAppointment={handleNewAppointment}
+                    doctorName={selectedDoctor?.nome}
+                    tipoAtendimento={tipoAtendimento}
+                    appointmentCount={appointmentCount}
+                  />
+                </CardContent>
+              </Card>
 
-                <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      className={cn(
-                        'min-w-[240px] justify-center text-center font-medium',
-                        !selectedDate && 'text-muted-foreground'
-                      )}
-                    >
-                      <CalendarIcon className="mr-2 h-4 w-4" />
-                      {format(selectedDate, "EEEE, dd 'de' MMMM", { locale: ptBR })}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="center">
-                    <Calendar
-                      mode="single"
-                      selected={selectedDate}
-                      onSelect={(date) => {
-                        if (date) {
-                          setSelectedDate(date);
-                          setCalendarOpen(false);
-                        }
-                      }}
-                      locale={ptBR}
-                      initialFocus
-                    />
-                  </PopoverContent>
-                </Popover>
-
-                <Button variant="outline" size="icon" onClick={handleNextDay}>
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
-
-              <CardTitle className="text-center mt-4 text-lg">
-                Agenda de {selectedDoctor?.nome} - {tipoAtendimento === 'consulta' ? 'Consultas' : 'Ultrassom'}
-              </CardTitle>
-            </CardHeader>
-
-            <CardContent>
-              <AgendaGrid
+              <AgendaTimeGrid
                 doctorRules={selectedDoctorRules}
                 appointments={appointments || []}
                 selectedDate={selectedDate}
@@ -273,23 +315,33 @@ export default function Agendamentos() {
                 onAppointmentClick={handleAppointmentClick}
                 isLoading={isLoadingAppointments}
               />
-            </CardContent>
-          </Card>
-        )}
+            </>
+          ) : (
+            <Card>
+              <CardContent className="py-16">
+                <div className="text-center text-muted-foreground">
+                  <p className="text-lg font-medium">Selecione um médico</p>
+                  <p className="text-sm mt-1">
+                    Escolha o tipo de atendimento e um médico para visualizar a agenda.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
 
-        {/* Mensagem quando nenhum médico selecionado */}
-        {!selectedDoctorId && (
-          <Card className="glass-card">
-            <CardContent className="py-12">
-              <div className="text-center text-muted-foreground">
-                <p className="text-lg font-medium">Selecione um médico</p>
-                <p className="text-sm mt-1">
-                  Escolha o tipo de atendimento e um médico para visualizar a agenda.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        )}
+        {/* Right Column - Next Available Slots */}
+        <div className="space-y-4">
+          {selectedDoctorId && (
+            <ProximosHorariosLivres
+              doctorId={selectedDoctorId}
+              doctorRules={selectedDoctorRules}
+              tipoAtendimento={tipoAtendimento}
+              currentDate={selectedDate}
+              onSlotClick={handleProximoHorarioClick}
+            />
+          )}
+        </div>
       </div>
 
       {/* Modal de Novo Agendamento */}
