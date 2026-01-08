@@ -651,7 +651,9 @@ ${examTypes
 
           if (fullCategoriaResult.disponibilidades && Array.isArray(fullCategoriaResult.disponibilidades)) {
             for (const disp of fullCategoriaResult.disponibilidades) {
-              const slots = disp.slots || [];
+              // Verificar AMBOS os campos: slots OU horarios_disponiveis
+              const slots = disp.slots || disp.horarios_disponiveis || [];
+              console.log(`Médico ${disp.doctor_name}: slots=${JSON.stringify(slots).substring(0, 200)}`);
 
               if (slots.length === 0) {
                 // Buscar próxima vaga para este médico
