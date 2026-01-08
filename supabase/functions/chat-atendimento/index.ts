@@ -343,6 +343,34 @@ serve(async (req) => {
 
     // Pré-processar a última mensagem do usuário para ajudar a IA
     const lastUserMessage = [...messages].reverse().find((m) => m.role === "user")?.content || "";
+    
+    // ═══════════════════════════════════════
+    // DETECÇÃO AUTOMÁTICA DE REAGENDAMENTO
+    // ═══════════════════════════════════════
+    const rescheduleKeywords = [
+      "trocar horario", "trocar meu horario", "trocar o horario",
+      "reagendar", "remarcar", "mudar horario", "alterar horario",
+      "mudar meu horario", "alterar meu horario", "mudar a data",
+      "trocar a data", "alterar a data", "trocar de horario",
+      "preciso trocar", "quero trocar", "gostaria de trocar",
+      "preciso reagendar", "quero reagendar", "gostaria de reagendar",
+      "preciso remarcar", "quero remarcar", "gostaria de remarcar"
+    ];
+    const normalizedUserMessage = normalizeText(lastUserMessage);
+    const isRescheduleRequest = rescheduleKeywords.some(kw => normalizedUserMessage.includes(kw));
+
+    if (isRescheduleRequest) {
+      console.log("Reschedule request detected - forcing handoff");
+      return new Response(
+        JSON.stringify({
+          message: "Entendi que você precisa reagendar seu horário! 😊 Vou encaminhar você para um atendente que poderá ajudá-la com a alteração. Um momento, por favor!",
+          humanHandoff: true,
+          toolsUsed: [{ name: "encaminhar_humano", result: { encaminhado: true, motivo: "Reagendamento/troca de horário de consulta ou exame" } }],
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    
     const { foundExams, foundDoctors, unresolved } = extractMentionedItems(lastUserMessage, examTypes, doctors);
 
     // Build simplified context with pricing focus
@@ -523,7 +551,7 @@ ${examTypes
         function: {
           name: "encaminhar_humano",
           description:
-            "Encaminha para atendente humano. Usar APENAS para: convênio, desconto, item sem preço, pedido explícito, dúvida clínica.",
+            "Encaminha para atendente humano. Usar para: convênio, desconto, item sem preço, pedido explícito, dúvida clínica, TROCA DE HORÁRIO ou REAGENDAMENTO de consulta/exame já marcado.",
           parameters: {
             type: "object",
             properties: {
