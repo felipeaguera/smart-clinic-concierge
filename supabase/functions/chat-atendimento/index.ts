@@ -134,6 +134,7 @@ ENCAMINHAR se:
 - Item existe mas has_price = false
 - Dúvida clínica complexa
 - Pedido de encaixe/exceção
+- Quando pedir para trocar de horario agendado ou pedir pra trocar de exame, 
 
 NUNCA encaminhar por:
 - Frase confusa ou erro de português
