@@ -21,6 +21,7 @@ const SYSTEM_PROMPT = `Você é Clara, assistente virtual de uma clínica médic
 5. Interprete erros de escrita e abreviações - NUNCA corrija o paciente.
 6. Não falar tempo de duração da consulta ou exame
 7. Sempre seja cordial e com tom acolhedor
+8. Sempre que a paciente pedir para trocar de horário ou reagendar o exame, sempre deve ser encaminhada para humano. 
 
 
 ═══════════════════════════════════════
@@ -651,9 +652,7 @@ ${examTypes
 
           if (fullCategoriaResult.disponibilidades && Array.isArray(fullCategoriaResult.disponibilidades)) {
             for (const disp of fullCategoriaResult.disponibilidades) {
-              // Verificar AMBOS os campos: slots OU horarios_disponiveis
-              const slots = disp.slots || disp.horarios_disponiveis || [];
-              console.log(`Médico ${disp.doctor_name}: slots=${JSON.stringify(slots).substring(0, 200)}`);
+              const slots = disp.slots || [];
 
               if (slots.length === 0) {
                 // Buscar próxima vaga para este médico
