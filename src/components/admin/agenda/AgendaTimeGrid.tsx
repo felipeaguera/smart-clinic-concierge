@@ -215,11 +215,7 @@ export function AgendaTimeGrid({
                 className="w-full h-full min-h-[48px] rounded-lg border-2 border-dashed border-emerald-300 bg-emerald-50/50 hover:bg-emerald-100 hover:border-emerald-400 transition-colors flex items-center justify-center gap-2 text-emerald-600"
               >
                 <Plus className="h-4 w-4" />
-                <span className="text-sm font-medium">
-                  {row.availableMinutes && row.availableMinutes > 30
-                    ? `${row.availableMinutes} min disponíveis`
-                    : 'Livre'}
-                </span>
+                <span className="text-sm font-medium">Livre</span>
               </button>
             ) : null}
           </div>
