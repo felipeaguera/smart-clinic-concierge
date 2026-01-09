@@ -362,14 +362,19 @@ export default function TiposExame() {
             {showDuracao && (
               <div className="space-y-2">
                 <Label htmlFor="duracao">Duração (minutos)</Label>
-                <Input
-                  id="duracao"
-                  type="number"
-                  min="1"
-                  value={duracao}
-                  onChange={(e) => setDuracao(e.target.value)}
-                  placeholder="30"
-                />
+                <Select value={duracao} onValueChange={setDuracao}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione a duração" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="10">10 minutos</SelectItem>
+                    <SelectItem value="20">20 minutos</SelectItem>
+                    <SelectItem value="30">30 minutos</SelectItem>
+                    <SelectItem value="40">40 minutos</SelectItem>
+                    <SelectItem value="50">50 minutos</SelectItem>
+                    <SelectItem value="60">60 minutos</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             )}
 
