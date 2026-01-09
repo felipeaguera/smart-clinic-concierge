@@ -154,7 +154,7 @@ export function SelecionarNovoHorarioModal({
           time: minutesToTime(cursor),
           endTime: minutesToTime(cursor + examDuration),
         });
-        cursor += 15; // Step de 15 min para mais opções
+        cursor += 10; // Step de 10 min para mais opções
       }
 
       cursor = Math.max(cursor, aptEnd);
@@ -166,7 +166,7 @@ export function SelecionarNovoHorarioModal({
         time: minutesToTime(cursor),
         endTime: minutesToTime(cursor + examDuration),
       });
-      cursor += 15;
+      cursor += 10;
     }
 
     // Remove duplicatas
