@@ -105,8 +105,8 @@ export function NovoAgendamentoModal({
     const startMinutes = timeToMinutes(selectedTime);
     const endMinutes = timeToMinutes(slotEndTime);
     
-    // Gera horários de 15 em 15 minutos
-    for (let m = startMinutes; m < endMinutes; m += 15) {
+    // Gera horários de 10 em 10 minutos
+    for (let m = startMinutes; m < endMinutes; m += 10) {
       options.push(minutesToTime(m));
     }
     
