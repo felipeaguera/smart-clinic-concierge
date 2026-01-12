@@ -46,7 +46,8 @@ interface TimeSlotRow {
   time: string;
   minutes: number;
   isWithinWorkHours: boolean;
-  appointments: Appointment[];
+  appointmentsStarting: Appointment[];
+  appointmentsContinuing: Appointment[];
   isFree: boolean;
   freeUntil?: string;
   availableMinutes?: number;
@@ -107,16 +108,24 @@ export function AgendaTimeGrid({
       });
 
       // Find appointments that START in this slot
-      const aptsInSlot = validApts.filter(apt => {
+      const aptsStartingInSlot = validApts.filter(apt => {
         const aptStart = timeToMinutes(apt.hora_inicio);
         return aptStart >= min && aptStart < slotEnd;
+      });
+
+      // Find appointments that CONTINUE through this slot (started before but still running)
+      const aptsContinuingInSlot = validApts.filter(apt => {
+        const aptStart = timeToMinutes(apt.hora_inicio);
+        const aptEnd = timeToMinutes(apt.hora_fim);
+        // Appointment continues if: started before this slot AND ends after this slot starts
+        return aptStart < min && aptEnd > min;
       });
 
       // Check if slot is free (no appointment occupying this time)
       const isOccupied = validApts.some(apt => {
         const aptStart = timeToMinutes(apt.hora_inicio);
         const aptEnd = timeToMinutes(apt.hora_fim);
-        return aptStart <= min && aptEnd > min;
+        return aptStart < slotEnd && aptEnd > min;
       });
 
       // Calculate free time until next appointment or end of day
@@ -150,7 +159,8 @@ export function AgendaTimeGrid({
         time,
         minutes: min,
         isWithinWorkHours: isWithinWork,
-        appointments: aptsInSlot,
+        appointmentsStarting: aptsStartingInSlot,
+        appointmentsContinuing: aptsContinuingInSlot,
         isFree: !isOccupied && isWithinWork,
         freeUntil,
         availableMinutes,
@@ -198,14 +208,29 @@ export function AgendaTimeGrid({
 
           {/* Content column */}
           <div className="flex-1 p-1">
-            {row.appointments.length > 0 ? (
+            {row.appointmentsStarting.length > 0 ? (
               <div className="flex gap-1 flex-wrap">
-                {row.appointments.map((apt) => (
+                {row.appointmentsStarting.map((apt) => (
                   <div key={apt.id} className="flex-1 min-w-[150px]">
                     <AgendaAppointmentCard
                       appointment={apt}
                       onClick={() => onAppointmentClick(apt)}
                     />
+                  </div>
+                ))}
+              </div>
+            ) : row.appointmentsContinuing.length > 0 ? (
+              <div className="flex gap-1 flex-wrap">
+                {row.appointmentsContinuing.map((apt) => (
+                  <div key={apt.id} className="flex-1 min-w-[150px]">
+                    <div 
+                      onClick={() => onAppointmentClick(apt)}
+                      className="h-full min-h-[48px] rounded-lg bg-blue-100/50 border border-blue-200 border-dashed flex items-center justify-center cursor-pointer hover:bg-blue-100 transition-colors"
+                    >
+                      <span className="text-xs text-blue-500 font-medium">
+                        ↑ {apt.paciente_nome?.split(' ')[0] || 'Continuação'}
+                      </span>
+                    </div>
                   </div>
                 ))}
               </div>
