@@ -109,7 +109,7 @@ export function ProximosHorariosLivres({
             const now = new Date();
             const nowMinutes = now.getHours() * 60 + now.getMinutes() + 30;
             minMinutes = Math.max(dayStart, nowMinutes);
-            minMinutes = Math.ceil(minMinutes / 30) * 30; // Round up to 30 min
+            minMinutes = Math.ceil(minMinutes / 10) * 10; // Round up to 10 min
           }
 
           // Sort appointments
@@ -120,7 +120,7 @@ export function ProximosHorariosLivres({
           // Find free slots
           const freeSlots: string[] = [];
           
-          for (let min = minMinutes; min < dayEnd && freeSlots.length < 8; min += 30) {
+          for (let min = minMinutes; min < dayEnd && freeSlots.length < 8; min += 10) {
             // Check if this time is occupied
             const isOccupied = sortedApts.some(apt => {
               const aptStart = timeToMinutes(apt.hora_inicio);
