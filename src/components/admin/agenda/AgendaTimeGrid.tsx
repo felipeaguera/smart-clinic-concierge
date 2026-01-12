@@ -49,6 +49,8 @@ interface TimeSlotRow {
   appointmentsStarting: Appointment[];
   appointmentsContinuing: Appointment[];
   isFree: boolean;
+  hasPartialFreeTime?: boolean;
+  freeStartTime?: string;
   freeUntil?: string;
   availableMinutes?: number;
 }
@@ -121,24 +123,42 @@ export function AgendaTimeGrid({
         return aptStart < min && aptEnd > min;
       });
 
-      // Check if slot is free (no appointment occupying this time)
-      const isOccupied = validApts.some(apt => {
+      // Check if the slot is COMPLETELY occupied (appointment spans entire slot)
+      const isCompletelyOccupied = validApts.some(apt => {
         const aptStart = timeToMinutes(apt.hora_inicio);
         const aptEnd = timeToMinutes(apt.hora_fim);
-        return aptStart < slotEnd && aptEnd > min;
+        // Slot is completely occupied if appointment covers entire 30min
+        return aptStart <= min && aptEnd >= slotEnd;
       });
+
+      // Check if slot is partially occupied (has some free time after appointment ends)
+      const continuingApt = aptsContinuingInSlot[0];
+      let partialFreeStart: number | undefined;
+      if (continuingApt && !isCompletelyOccupied) {
+        const aptEnd = timeToMinutes(continuingApt.hora_fim);
+        if (aptEnd > min && aptEnd < slotEnd) {
+          partialFreeStart = aptEnd;
+        }
+      }
+
+      // Check if there's any appointment in this slot (for determining if it's completely free)
+      const hasAnyAppointment = aptsStartingInSlot.length > 0 || aptsContinuingInSlot.length > 0;
 
       // Calculate free time until next appointment or end of day
       let freeUntil: string | undefined;
       let availableMinutes: number | undefined;
+      let freeStartTime: string | undefined;
       
-      if (!isOccupied && isWithinWork) {
+      // Determine the actual free start time in this slot
+      const actualFreeStart = partialFreeStart ?? min;
+      
+      if (isWithinWork && (!hasAnyAppointment || partialFreeStart !== undefined)) {
         // Find next appointment or end of work hours
         let endOfFree = dayEnd;
         
         for (const apt of validApts) {
           const aptStart = timeToMinutes(apt.hora_inicio);
-          if (aptStart > min && aptStart < endOfFree) {
+          if (aptStart > actualFreeStart && aptStart < endOfFree) {
             endOfFree = aptStart;
           }
         }
@@ -146,14 +166,18 @@ export function AgendaTimeGrid({
         // Also check rule boundaries
         for (const rule of rulesForDay) {
           const ruleEnd = timeToMinutes(rule.hora_fim);
-          if (ruleEnd > min && ruleEnd < endOfFree) {
+          if (ruleEnd > actualFreeStart && ruleEnd < endOfFree) {
             endOfFree = ruleEnd;
           }
         }
         
         freeUntil = minutesToTime(endOfFree);
-        availableMinutes = endOfFree - min;
+        availableMinutes = endOfFree - actualFreeStart;
+        freeStartTime = minutesToTime(actualFreeStart);
       }
+
+      const isCompletelyFree = !hasAnyAppointment && isWithinWork;
+      const hasPartialFreeTime = partialFreeStart !== undefined && availableMinutes !== undefined && availableMinutes > 0;
 
       timeRows.push({
         time,
@@ -161,7 +185,9 @@ export function AgendaTimeGrid({
         isWithinWorkHours: isWithinWork,
         appointmentsStarting: aptsStartingInSlot,
         appointmentsContinuing: aptsContinuingInSlot,
-        isFree: !isOccupied && isWithinWork,
+        isFree: isCompletelyFree,
+        hasPartialFreeTime,
+        freeStartTime,
         freeUntil,
         availableMinutes,
       });
@@ -233,6 +259,20 @@ export function AgendaTimeGrid({
                     </div>
                   </div>
                 ))}
+                {/* Show partial free time button if available */}
+                {row.hasPartialFreeTime && row.freeStartTime && (
+                  <div className="flex-1 min-w-[150px]">
+                    <button
+                      onClick={() => onSlotClick(row.freeStartTime!, row.availableMinutes || 30, row.freeUntil || row.freeStartTime!)}
+                      className="w-full h-full min-h-[48px] rounded-lg border-2 border-dashed border-amber-300 bg-amber-50/50 hover:bg-amber-100 hover:border-amber-400 transition-colors flex items-center justify-center gap-2 text-amber-600"
+                    >
+                      <Plus className="h-4 w-4" />
+                      <span className="text-sm font-medium">
+                        {row.freeStartTime} - {row.availableMinutes}min
+                      </span>
+                    </button>
+                  </div>
+                )}
               </div>
             ) : row.isFree ? (
               <button
