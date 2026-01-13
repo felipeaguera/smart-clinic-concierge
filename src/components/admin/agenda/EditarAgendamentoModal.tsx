@@ -188,7 +188,7 @@ export function EditarAgendamentoModal({
               <div className="flex justify-between">
                 <span className="text-sm text-muted-foreground">Horário:</span>
                 <span className="text-sm font-medium">
-                  {appointment.hora_inicio} - {appointment.hora_fim}
+                  {appointment.hora_inicio.slice(0, 5)} - {appointment.hora_fim.slice(0, 5)}
                 </span>
               </div>
               <div className="flex justify-between">
