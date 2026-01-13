@@ -46,11 +46,9 @@ interface TimeSlotRow {
   time: string;
   minutes: number;
   isWithinWorkHours: boolean;
-  appointmentsStarting: Appointment[];
-  appointmentsContinuing: Appointment[];
+  appointment?: Appointment; // Appointment that STARTS at this slot
+  isOccupied: boolean; // Slot is occupied by any appointment (starting or continuing)
   isFree: boolean;
-  hasPartialFreeTime?: boolean;
-  freeStartTime?: string;
   freeUntil?: string;
   availableMinutes?: number;
 }
@@ -88,19 +86,19 @@ export function AgendaTimeGrid({
       if (end > dayEnd) dayEnd = end;
     }
 
-    // Round to 30 min intervals
-    dayStart = Math.floor(dayStart / 30) * 30;
-    dayEnd = Math.ceil(dayEnd / 30) * 30;
+    // Round to 10 min intervals
+    dayStart = Math.floor(dayStart / 10) * 10;
+    dayEnd = Math.ceil(dayEnd / 10) * 10;
 
     // Valid appointments (not cancelled)
     const validApts = appointments.filter(apt => apt.status !== 'cancelado');
 
-    // Generate rows every 30 minutes
+    // Generate rows every 10 minutes
     const timeRows: TimeSlotRow[] = [];
     
-    for (let min = dayStart; min < dayEnd; min += 30) {
+    for (let min = dayStart; min < dayEnd; min += 10) {
       const time = minutesToTime(min);
-      const slotEnd = min + 30;
+      const slotEnd = min + 10;
       
       // Check if this time is within work hours
       const isWithinWork = rulesForDay.some(rule => {
@@ -109,56 +107,30 @@ export function AgendaTimeGrid({
         return min >= ruleStart && min < ruleEnd;
       });
 
-      // Find appointments that START in this slot
-      const aptsStartingInSlot = validApts.filter(apt => {
+      // Find appointment that STARTS at this slot
+      const aptStarting = validApts.find(apt => {
         const aptStart = timeToMinutes(apt.hora_inicio);
-        return aptStart >= min && aptStart < slotEnd;
+        return aptStart === min;
       });
 
-      // Find appointments that CONTINUE through this slot (started before but still running)
-      const aptsContinuingInSlot = validApts.filter(apt => {
-        const aptStart = timeToMinutes(apt.hora_inicio);
-        const aptEnd = timeToMinutes(apt.hora_fim);
-        // Appointment continues if: started before this slot AND ends after this slot starts
-        return aptStart < min && aptEnd > min;
-      });
-
-      // Check if the slot is COMPLETELY occupied (appointment spans entire slot)
-      const isCompletelyOccupied = validApts.some(apt => {
+      // Check if slot is occupied (any appointment covers this time)
+      const isOccupied = validApts.some(apt => {
         const aptStart = timeToMinutes(apt.hora_inicio);
         const aptEnd = timeToMinutes(apt.hora_fim);
-        // Slot is completely occupied if appointment covers entire 30min
-        return aptStart <= min && aptEnd >= slotEnd;
+        return aptStart <= min && aptEnd > min;
       });
-
-      // Check if slot is partially occupied (has some free time after appointment ends)
-      const continuingApt = aptsContinuingInSlot[0];
-      let partialFreeStart: number | undefined;
-      if (continuingApt && !isCompletelyOccupied) {
-        const aptEnd = timeToMinutes(continuingApt.hora_fim);
-        if (aptEnd > min && aptEnd < slotEnd) {
-          partialFreeStart = aptEnd;
-        }
-      }
-
-      // Check if there's any appointment in this slot (for determining if it's completely free)
-      const hasAnyAppointment = aptsStartingInSlot.length > 0 || aptsContinuingInSlot.length > 0;
 
       // Calculate free time until next appointment or end of day
       let freeUntil: string | undefined;
       let availableMinutes: number | undefined;
-      let freeStartTime: string | undefined;
       
-      // Determine the actual free start time in this slot
-      const actualFreeStart = partialFreeStart ?? min;
-      
-      if (isWithinWork && (!hasAnyAppointment || partialFreeStart !== undefined)) {
+      if (!isOccupied && isWithinWork) {
         // Find next appointment or end of work hours
         let endOfFree = dayEnd;
         
         for (const apt of validApts) {
           const aptStart = timeToMinutes(apt.hora_inicio);
-          if (aptStart > actualFreeStart && aptStart < endOfFree) {
+          if (aptStart > min && aptStart < endOfFree) {
             endOfFree = aptStart;
           }
         }
@@ -166,28 +138,22 @@ export function AgendaTimeGrid({
         // Also check rule boundaries
         for (const rule of rulesForDay) {
           const ruleEnd = timeToMinutes(rule.hora_fim);
-          if (ruleEnd > actualFreeStart && ruleEnd < endOfFree) {
+          if (ruleEnd > min && ruleEnd < endOfFree) {
             endOfFree = ruleEnd;
           }
         }
         
         freeUntil = minutesToTime(endOfFree);
-        availableMinutes = endOfFree - actualFreeStart;
-        freeStartTime = minutesToTime(actualFreeStart);
+        availableMinutes = endOfFree - min;
       }
-
-      const isCompletelyFree = !hasAnyAppointment && isWithinWork;
-      const hasPartialFreeTime = partialFreeStart !== undefined && availableMinutes !== undefined && availableMinutes > 0;
 
       timeRows.push({
         time,
         minutes: min,
         isWithinWorkHours: isWithinWork,
-        appointmentsStarting: aptsStartingInSlot,
-        appointmentsContinuing: aptsContinuingInSlot,
-        isFree: isCompletelyFree,
-        hasPartialFreeTime,
-        freeStartTime,
+        appointment: aptStarting,
+        isOccupied,
+        isFree: !isOccupied && isWithinWork,
         freeUntil,
         availableMinutes,
       });
@@ -215,72 +181,47 @@ export function AgendaTimeGrid({
     );
   }
 
+  // Helper to check if this is a "full hour" row (for visual emphasis)
+  const isFullHour = (minutes: number) => minutes % 60 === 0;
+
   return (
     <div className="border rounded-lg overflow-hidden">
-      {rows.map((row, idx) => (
+      {rows.map((row) => (
         <div
           key={row.time}
           className={cn(
-            'flex border-b last:border-b-0 min-h-[56px]',
-            !row.isWithinWorkHours && 'bg-muted/30'
+            'flex border-b last:border-b-0 min-h-[44px]',
+            !row.isWithinWorkHours && 'bg-muted/30',
+            isFullHour(row.minutes) && 'border-t-2 border-t-muted'
           )}
         >
           {/* Time column */}
-          <div className="w-20 shrink-0 px-3 py-2 border-r bg-muted/50 flex items-start justify-end">
-            <span className="text-sm font-medium text-muted-foreground">
+          <div className={cn(
+            'w-16 shrink-0 px-2 py-1 border-r bg-muted/50 flex items-center justify-end',
+            isFullHour(row.minutes) ? 'font-semibold text-foreground' : 'text-muted-foreground'
+          )}>
+            <span className="text-xs">
               {row.time}
             </span>
           </div>
 
           {/* Content column */}
-          <div className="flex-1 p-1">
-            {row.appointmentsStarting.length > 0 ? (
-              <div className="flex gap-1 flex-wrap">
-                {row.appointmentsStarting.map((apt) => (
-                  <div key={apt.id} className="flex-1 min-w-[150px]">
-                    <AgendaAppointmentCard
-                      appointment={apt}
-                      onClick={() => onAppointmentClick(apt)}
-                    />
-                  </div>
-                ))}
-              </div>
-            ) : row.appointmentsContinuing.length > 0 ? (
-              <div className="flex gap-1 flex-wrap">
-                {row.appointmentsContinuing.map((apt) => (
-                  <div key={apt.id} className="flex-1 min-w-[150px]">
-                    <div 
-                      onClick={() => onAppointmentClick(apt)}
-                      className="h-full min-h-[48px] rounded-lg bg-blue-100/50 border border-blue-200 border-dashed flex items-center justify-center cursor-pointer hover:bg-blue-100 transition-colors"
-                    >
-                      <span className="text-xs text-blue-500 font-medium">
-                        ↑ {apt.paciente_nome?.split(' ')[0] || 'Continuação'}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-                {/* Show partial free time button if available */}
-                {row.hasPartialFreeTime && row.freeStartTime && (
-                  <div className="flex-1 min-w-[150px]">
-                    <button
-                      onClick={() => onSlotClick(row.freeStartTime!, row.availableMinutes || 30, row.freeUntil || row.freeStartTime!)}
-                      className="w-full h-full min-h-[48px] rounded-lg border-2 border-dashed border-amber-300 bg-amber-50/50 hover:bg-amber-100 hover:border-amber-400 transition-colors flex items-center justify-center gap-2 text-amber-600"
-                    >
-                      <Plus className="h-4 w-4" />
-                      <span className="text-sm font-medium">
-                        {row.freeStartTime} - {row.availableMinutes}min
-                      </span>
-                    </button>
-                  </div>
-                )}
-              </div>
+          <div className="flex-1 p-0.5">
+            {row.appointment ? (
+              <AgendaAppointmentCard
+                appointment={row.appointment}
+                onClick={() => onAppointmentClick(row.appointment!)}
+              />
+            ) : row.isOccupied ? (
+              // Slot occupied by continuing appointment - show subtle indicator
+              <div className="h-full min-h-[40px] bg-blue-50/80 border-l-2 border-l-blue-300" />
             ) : row.isFree ? (
               <button
-                onClick={() => onSlotClick(row.time, row.availableMinutes || 30, row.freeUntil || row.time)}
-                className="w-full h-full min-h-[48px] rounded-lg border-2 border-dashed border-emerald-300 bg-emerald-50/50 hover:bg-emerald-100 hover:border-emerald-400 transition-colors flex items-center justify-center gap-2 text-emerald-600"
+                onClick={() => onSlotClick(row.time, row.availableMinutes || 10, row.freeUntil || row.time)}
+                className="w-full h-full min-h-[40px] rounded border border-dashed border-emerald-300 bg-emerald-50/30 hover:bg-emerald-100 hover:border-emerald-400 transition-colors flex items-center justify-center gap-1 text-emerald-600"
               >
-                <Plus className="h-4 w-4" />
-                <span className="text-sm font-medium">Livre</span>
+                <Plus className="h-3 w-3" />
+                <span className="text-xs font-medium">Livre</span>
               </button>
             ) : null}
           </div>
