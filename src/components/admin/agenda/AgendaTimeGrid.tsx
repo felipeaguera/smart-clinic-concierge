@@ -47,6 +47,7 @@ interface TimeSlotRow {
   minutes: number;
   isWithinWorkHours: boolean;
   appointment?: Appointment; // Appointment that STARTS at this slot
+  continuingAppointment?: Appointment; // Appointment that CONTINUES through this slot
   isOccupied: boolean; // Slot is occupied by any appointment (starting or continuing)
   isFree: boolean;
   freeUntil?: string;
@@ -113,12 +114,15 @@ export function AgendaTimeGrid({
         return aptStart === min;
       });
 
-      // Check if slot is occupied (any appointment covers this time)
-      const isOccupied = validApts.some(apt => {
+      // Find appointment that CONTINUES through this slot (started earlier, still running)
+      const continuingApt = validApts.find(apt => {
         const aptStart = timeToMinutes(apt.hora_inicio);
         const aptEnd = timeToMinutes(apt.hora_fim);
-        return aptStart <= min && aptEnd > min;
+        return aptStart < min && aptEnd > min;
       });
+
+      // Check if slot is occupied (any appointment covers this time)
+      const isOccupied = !!aptStarting || !!continuingApt;
 
       // Calculate free time until next appointment or end of day
       let freeUntil: string | undefined;
@@ -152,6 +156,7 @@ export function AgendaTimeGrid({
         minutes: min,
         isWithinWorkHours: isWithinWork,
         appointment: aptStarting,
+        continuingAppointment: continuingApt,
         isOccupied,
         isFree: !isOccupied && isWithinWork,
         freeUntil,
@@ -212,9 +217,19 @@ export function AgendaTimeGrid({
                 appointment={row.appointment}
                 onClick={() => onAppointmentClick(row.appointment!)}
               />
+            ) : row.continuingAppointment ? (
+              // Slot occupied by continuing appointment - show patient name and make clickable
+              <button
+                onClick={() => onAppointmentClick(row.continuingAppointment!)}
+                className="w-full h-full min-h-[40px] bg-blue-50/80 border-l-4 border-l-blue-400 hover:bg-blue-100 transition-colors flex items-center px-2 cursor-pointer"
+              >
+                <span className="text-xs text-blue-600 font-medium truncate">
+                  ↑ {row.continuingAppointment.paciente_nome?.split(' ')[0] || 'Ocupado'}
+                </span>
+              </button>
             ) : row.isOccupied ? (
-              // Slot occupied by continuing appointment - show subtle indicator
-              <div className="h-full min-h-[40px] bg-blue-50/80 border-l-2 border-l-blue-300" />
+              // Fallback for any other occupied state
+              <div className="h-full min-h-[40px] bg-blue-50/80 border-l-4 border-l-blue-300" />
             ) : row.isFree ? (
               <button
                 onClick={() => onSlotClick(row.time, row.availableMinutes || 10, row.freeUntil || row.time)}
