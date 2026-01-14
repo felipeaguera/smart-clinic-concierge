@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils';
-import { Clock, User, Stethoscope } from 'lucide-react';
+import { Clock, User, Stethoscope, UserPlus } from 'lucide-react';
 
 interface Appointment {
   id: string;
@@ -8,6 +8,7 @@ interface Appointment {
   status: string;
   paciente_nome?: string | null;
   paciente_telefone?: string | null;
+  is_encaixe?: boolean;
   exam_types?: { id: string; nome: string; duracao_minutos: number };
 }
 
@@ -49,13 +50,26 @@ const STATUS_CONFIG: Record<string, { bg: string; border: string; text: string; 
   },
 };
 
+// Encaixe override styles
+const ENCAIXE_CONFIG = {
+  bg: 'bg-amber-50',
+  border: 'border-l-amber-500',
+  text: 'text-amber-900',
+};
+
 function timeToMinutes(time: string): number {
   const [hours, minutes] = time.split(':').map(Number);
   return hours * 60 + minutes;
 }
 
 export function AgendaAppointmentCard({ appointment, onClick }: AgendaAppointmentCardProps) {
-  const config = STATUS_CONFIG[appointment.status] || STATUS_CONFIG.reservado;
+  const isEncaixe = appointment.is_encaixe === true;
+  
+  // Use encaixe colors if it's an encaixe, otherwise use status colors
+  const config = isEncaixe 
+    ? { ...ENCAIXE_CONFIG, label: STATUS_CONFIG[appointment.status]?.label || 'Reservado' }
+    : (STATUS_CONFIG[appointment.status] || STATUS_CONFIG.reservado);
+    
   const patientName = appointment.paciente_nome || 'Paciente não informado';
   const examName = appointment.exam_types?.nome || '';
   
@@ -68,17 +82,25 @@ export function AgendaAppointmentCard({ appointment, onClick }: AgendaAppointmen
       onClick={onClick}
       className={cn(
         'w-full rounded-md border-l-4 px-2.5 py-1.5 text-left transition-all hover:shadow-md cursor-pointer',
-        config.bg,
-        config.border,
-        config.text
+        isEncaixe ? ENCAIXE_CONFIG.bg : config.bg,
+        isEncaixe ? ENCAIXE_CONFIG.border : config.border,
+        isEncaixe ? ENCAIXE_CONFIG.text : config.text
       )}
     >
-      {/* Patient name */}
+      {/* Header with encaixe indicator */}
       <div className="flex items-center gap-1.5">
+        {isEncaixe && (
+          <UserPlus className="h-3 w-3 text-amber-600 shrink-0" />
+        )}
         <User className="h-3 w-3 opacity-70 shrink-0" />
         <span className="font-semibold text-sm truncate">
           {patientName}
         </span>
+        {isEncaixe && (
+          <span className="text-[10px] font-medium bg-amber-200 text-amber-800 px-1 py-0.5 rounded shrink-0">
+            ENCAIXE
+          </span>
+        )}
       </div>
       
       {/* Exam and duration */}
