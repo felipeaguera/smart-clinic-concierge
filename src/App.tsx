@@ -11,6 +11,7 @@ import Medicos from "./pages/admin/Medicos";
 import TiposExame from "./pages/admin/TiposExame";
 import RegrasAtendimento from "./pages/admin/RegrasAtendimento";
 import ExcecoesAgenda from "./pages/admin/ExcecoesAgenda";
+import DatasExtras from "./pages/admin/DatasExtras";
 import Agendamentos from "./pages/admin/Agendamentos";
 import NotFound from "./pages/NotFound";
 
@@ -55,6 +56,14 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <ExcecoesAgenda />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/datas-extras"
+              element={
+                <ProtectedRoute>
+                  <DatasExtras />
                 </ProtectedRoute>
               }
             />

@@ -1,5 +1,5 @@
 import { useLocation } from 'react-router-dom';
-import { Users, FileText, Clock, CalendarOff, Calendar, LogOut } from 'lucide-react';
+import { Users, FileText, Clock, CalendarOff, CalendarPlus, Calendar, LogOut } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import {
   Sidebar,
@@ -21,6 +21,7 @@ const menuItems = [
   { title: 'Tipos de Exame', url: '/admin/exames', icon: FileText },
   { title: 'Regras de Atendimento', url: '/admin/regras', icon: Clock },
   { title: 'Exceções de Agenda', url: '/admin/excecoes', icon: CalendarOff },
+  { title: 'Datas Extras', url: '/admin/datas-extras', icon: CalendarPlus },
   { title: 'Agendamentos', url: '/admin/agendamentos', icon: Calendar },
 ];
 
