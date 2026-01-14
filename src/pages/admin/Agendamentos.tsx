@@ -50,6 +50,7 @@ interface Appointment {
   status: string;
   paciente_nome?: string | null;
   paciente_telefone?: string | null;
+  is_encaixe?: boolean;
   exam_types?: { id: string; nome: string; duracao_minutos: number };
 }
 
@@ -118,7 +119,7 @@ export default function Agendamentos() {
       
       const { data, error } = await supabase
         .from('appointments')
-        .select('id, hora_inicio, hora_fim, status, paciente_nome, paciente_telefone, exam_types(id, nome, duracao_minutos)')
+        .select('id, hora_inicio, hora_fim, status, paciente_nome, paciente_telefone, is_encaixe, exam_types(id, nome, duracao_minutos)')
         .eq('doctor_id', selectedDoctorId)
         .eq('data', format(selectedDate, 'yyyy-MM-dd'));
       

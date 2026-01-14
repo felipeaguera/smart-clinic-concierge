@@ -18,6 +18,7 @@ interface Appointment {
   status: string;
   paciente_nome?: string | null;
   paciente_telefone?: string | null;
+  is_encaixe?: boolean;
   exam_types?: { id: string; nome: string; duracao_minutos: number };
 }
 
@@ -221,10 +222,19 @@ export function AgendaTimeGrid({
               // Slot occupied by continuing appointment - show patient name and make clickable
               <button
                 onClick={() => onAppointmentClick(row.continuingAppointment!)}
-                className="w-full h-full min-h-[40px] bg-blue-50/80 border-l-4 border-l-blue-400 hover:bg-blue-100 transition-colors flex items-center px-2 cursor-pointer"
+                className={cn(
+                  "w-full h-full min-h-[40px] border-l-4 hover:opacity-80 transition-colors flex items-center px-2 cursor-pointer",
+                  row.continuingAppointment.is_encaixe 
+                    ? "bg-amber-50/80 border-l-amber-400 hover:bg-amber-100" 
+                    : "bg-blue-50/80 border-l-blue-400 hover:bg-blue-100"
+                )}
               >
-                <span className="text-xs text-blue-600 font-medium truncate">
+                <span className={cn(
+                  "text-xs font-medium truncate",
+                  row.continuingAppointment.is_encaixe ? "text-amber-600" : "text-blue-600"
+                )}>
                   ↑ {row.continuingAppointment.paciente_nome?.split(' ')[0] || 'Ocupado'}
+                  {row.continuingAppointment.is_encaixe && ' (E)'}
                 </span>
               </button>
             ) : row.isOccupied ? (
