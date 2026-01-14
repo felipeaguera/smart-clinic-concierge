@@ -23,6 +23,7 @@ export type Database = {
           hora_fim: string
           hora_inicio: string
           id: string
+          is_encaixe: boolean
           paciente_nome: string | null
           paciente_telefone: string | null
           status: string
@@ -35,6 +36,7 @@ export type Database = {
           hora_fim: string
           hora_inicio: string
           id?: string
+          is_encaixe?: boolean
           paciente_nome?: string | null
           paciente_telefone?: string | null
           status?: string
@@ -47,6 +49,7 @@ export type Database = {
           hora_fim?: string
           hora_inicio?: string
           id?: string
+          is_encaixe?: boolean
           paciente_nome?: string | null
           paciente_telefone?: string | null
           status?: string
@@ -197,6 +200,47 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "schedule_exceptions_doctor_id_fkey"
+            columns: ["doctor_id"]
+            isOneToOne: false
+            referencedRelation: "doctors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      schedule_openings: {
+        Row: {
+          created_at: string
+          data: string
+          doctor_id: string
+          hora_fim: string
+          hora_inicio: string
+          id: string
+          motivo: string | null
+          tipo_atendimento: string
+        }
+        Insert: {
+          created_at?: string
+          data: string
+          doctor_id: string
+          hora_fim: string
+          hora_inicio: string
+          id?: string
+          motivo?: string | null
+          tipo_atendimento?: string
+        }
+        Update: {
+          created_at?: string
+          data?: string
+          doctor_id?: string
+          hora_fim?: string
+          hora_inicio?: string
+          id?: string
+          motivo?: string | null
+          tipo_atendimento?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "schedule_openings_doctor_id_fkey"
             columns: ["doctor_id"]
             isOneToOne: false
             referencedRelation: "doctors"

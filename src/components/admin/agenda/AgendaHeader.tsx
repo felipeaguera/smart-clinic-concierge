@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { format, isToday } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { ChevronLeft, ChevronRight, Plus, CalendarCheck } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, CalendarCheck, UserPlus } from 'lucide-react';
 
 interface AgendaHeaderProps {
   selectedDate: Date;
@@ -9,6 +9,7 @@ interface AgendaHeaderProps {
   onNextDay: () => void;
   onGoToToday: () => void;
   onNewAppointment: () => void;
+  onEncaixe: () => void;
   doctorName?: string;
   tipoAtendimento: 'consulta' | 'ultrassom';
   appointmentCount: number;
@@ -20,6 +21,7 @@ export function AgendaHeader({
   onNextDay,
   onGoToToday,
   onNewAppointment,
+  onEncaixe,
   doctorName,
   tipoAtendimento,
   appointmentCount,
@@ -34,6 +36,14 @@ export function AgendaHeader({
           <Button onClick={onNewAppointment} className="bg-emerald-600 hover:bg-emerald-700">
             <Plus className="h-4 w-4 mr-2" />
             Nova Consulta
+          </Button>
+          <Button 
+            onClick={onEncaixe} 
+            variant="outline"
+            className="border-amber-300 text-amber-700 hover:bg-amber-50"
+          >
+            <UserPlus className="h-4 w-4 mr-2" />
+            Encaixe
           </Button>
           {!isToday(selectedDate) && (
             <Button variant="outline" onClick={onGoToToday}>

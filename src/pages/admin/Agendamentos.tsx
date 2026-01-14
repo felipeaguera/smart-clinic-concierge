@@ -17,6 +17,7 @@ import { AgendaHeader } from '@/components/admin/agenda/AgendaHeader';
 import { ProximosHorariosLivres } from '@/components/admin/agenda/ProximosHorariosLivres';
 import { NovoAgendamentoModal } from '@/components/admin/agenda/NovoAgendamentoModal';
 import { EditarAgendamentoModal } from '@/components/admin/agenda/EditarAgendamentoModal';
+import { EncaixeModal } from '@/components/admin/agenda/EncaixeModal';
 import { format, addDays, subDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Stethoscope, Activity } from 'lucide-react';
@@ -67,6 +68,7 @@ export default function Agendamentos() {
   const [availableMinutes, setAvailableMinutes] = useState(0);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
+  const [encaixeModalOpen, setEncaixeModalOpen] = useState(false);
 
   // Fetch doctors
   const { data: doctors } = useQuery({
@@ -174,6 +176,7 @@ export default function Agendamentos() {
   const handlePrevDay = () => setSelectedDate(subDays(selectedDate, 1));
   const handleNextDay = () => setSelectedDate(addDays(selectedDate, 1));
   const handleGoToToday = () => setSelectedDate(new Date());
+  const handleEncaixe = () => setEncaixeModalOpen(true);
 
   const handleNewAppointment = () => {
     // Find first available slot
@@ -299,6 +302,7 @@ export default function Agendamentos() {
                     onNextDay={handleNextDay}
                     onGoToToday={handleGoToToday}
                     onNewAppointment={handleNewAppointment}
+                    onEncaixe={handleEncaixe}
                     doctorName={selectedDoctor?.nome}
                     tipoAtendimento={tipoAtendimento}
                     appointmentCount={appointmentCount}
@@ -371,6 +375,18 @@ export default function Agendamentos() {
           doctor={selectedDoctor}
           selectedDate={selectedDate}
           tipoAtendimento={tipoAtendimento}
+        />
+      )}
+
+      {/* Modal de Encaixe */}
+      {selectedDoctor && (
+        <EncaixeModal
+          isOpen={encaixeModalOpen}
+          onClose={() => setEncaixeModalOpen(false)}
+          selectedDate={selectedDate}
+          doctor={selectedDoctor}
+          tipoAtendimento={tipoAtendimento}
+          examTypes={examTypes || []}
         />
       )}
     </AdminLayout>
