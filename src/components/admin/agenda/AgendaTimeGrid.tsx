@@ -11,6 +11,14 @@ interface DoctorRule {
   tipo_atendimento: string;
 }
 
+interface ScheduleOpening {
+  id: string;
+  data: string;
+  hora_inicio: string;
+  hora_fim: string;
+  tipo_atendimento: string;
+}
+
 interface Appointment {
   id: string;
   hora_inicio: string;
@@ -24,6 +32,7 @@ interface Appointment {
 
 interface AgendaTimeGridProps {
   doctorRules: DoctorRule[];
+  scheduleOpenings: ScheduleOpening[];
   appointments: Appointment[];
   selectedDate: Date;
   tipoAtendimento: 'consulta' | 'ultrassom';
@@ -57,6 +66,7 @@ interface TimeSlotRow {
 
 export function AgendaTimeGrid({
   doctorRules,
+  scheduleOpenings,
   appointments,
   selectedDate,
   tipoAtendimento,
@@ -67,23 +77,38 @@ export function AgendaTimeGrid({
   const rows = useMemo(() => {
     const dayOfWeek = selectedDate.getDay();
     
-    // Filter rules for the day
+    // Filter weekly rules for the day
     const rulesForDay = doctorRules.filter(
       (rule) =>
         rule.dia_semana === dayOfWeek &&
         (rule.tipo_atendimento === 'ambos' || rule.tipo_atendimento === tipoAtendimento)
     );
 
-    if (rulesForDay.length === 0) {
+    // Filter schedule openings (extra schedules) for the day
+    const openingsForDay = scheduleOpenings.filter(
+      (opening) =>
+        opening.tipo_atendimento === 'ambos' || opening.tipo_atendimento === tipoAtendimento
+    );
+
+    // If no rules and no openings, no schedule available
+    if (rulesForDay.length === 0 && openingsForDay.length === 0) {
       return [];
     }
 
-    // Find day range
+    // Find day range (combining rules and openings)
     let dayStart = Infinity;
     let dayEnd = 0;
+    
     for (const rule of rulesForDay) {
       const start = timeToMinutes(rule.hora_inicio);
       const end = timeToMinutes(rule.hora_fim);
+      if (start < dayStart) dayStart = start;
+      if (end > dayEnd) dayEnd = end;
+    }
+    
+    for (const opening of openingsForDay) {
+      const start = timeToMinutes(opening.hora_inicio);
+      const end = timeToMinutes(opening.hora_fim);
       if (start < dayStart) dayStart = start;
       if (end > dayEnd) dayEnd = end;
     }
@@ -102,12 +127,20 @@ export function AgendaTimeGrid({
       const time = minutesToTime(min);
       const slotEnd = min + 10;
       
-      // Check if this time is within work hours
-      const isWithinWork = rulesForDay.some(rule => {
+      // Check if this time is within work hours (rules OR openings)
+      const isWithinRules = rulesForDay.some(rule => {
         const ruleStart = timeToMinutes(rule.hora_inicio);
         const ruleEnd = timeToMinutes(rule.hora_fim);
         return min >= ruleStart && min < ruleEnd;
       });
+      
+      const isWithinOpenings = openingsForDay.some(opening => {
+        const openingStart = timeToMinutes(opening.hora_inicio);
+        const openingEnd = timeToMinutes(opening.hora_fim);
+        return min >= openingStart && min < openingEnd;
+      });
+      
+      const isWithinWork = isWithinRules || isWithinOpenings;
 
       // Find appointment that STARTS at this slot
       const aptStarting = validApts.find(apt => {
@@ -140,11 +173,19 @@ export function AgendaTimeGrid({
           }
         }
         
-        // Also check rule boundaries
+        // Check rule boundaries
         for (const rule of rulesForDay) {
           const ruleEnd = timeToMinutes(rule.hora_fim);
           if (ruleEnd > min && ruleEnd < endOfFree) {
             endOfFree = ruleEnd;
+          }
+        }
+        
+        // Also check opening boundaries
+        for (const opening of openingsForDay) {
+          const openingEnd = timeToMinutes(opening.hora_fim);
+          if (openingEnd > min && openingEnd < endOfFree) {
+            endOfFree = openingEnd;
           }
         }
         
@@ -166,7 +207,7 @@ export function AgendaTimeGrid({
     }
 
     return timeRows;
-  }, [doctorRules, appointments, selectedDate, tipoAtendimento]);
+  }, [doctorRules, scheduleOpenings, appointments, selectedDate, tipoAtendimento]);
 
   if (isLoading) {
     return (

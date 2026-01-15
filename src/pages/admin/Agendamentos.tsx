@@ -36,6 +36,15 @@ interface DoctorRule {
   tipo_atendimento: string;
 }
 
+interface ScheduleOpening {
+  id: string;
+  doctor_id: string;
+  data: string;
+  hora_inicio: string;
+  hora_fim: string;
+  tipo_atendimento: string;
+}
+
 interface ExamType {
   id: string;
   nome: string;
@@ -95,6 +104,22 @@ export default function Agendamentos() {
       if (error) throw error;
       return data as DoctorRule[];
     },
+  });
+
+  // Fetch schedule openings (extra schedules)
+  const { data: scheduleOpenings } = useQuery({
+    queryKey: ['schedule_openings', selectedDoctorId, format(selectedDate, 'yyyy-MM-dd')],
+    queryFn: async () => {
+      if (!selectedDoctorId) return [];
+      const { data, error } = await supabase
+        .from('schedule_openings')
+        .select('*')
+        .eq('doctor_id', selectedDoctorId)
+        .eq('data', format(selectedDate, 'yyyy-MM-dd'));
+      if (error) throw error;
+      return data as ScheduleOpening[];
+    },
+    enabled: !!selectedDoctorId,
   });
 
   // Fetch exam types
@@ -313,6 +338,7 @@ export default function Agendamentos() {
 
               <AgendaTimeGrid
                 doctorRules={selectedDoctorRules}
+                scheduleOpenings={scheduleOpenings || []}
                 appointments={appointments || []}
                 selectedDate={selectedDate}
                 tipoAtendimento={tipoAtendimento}
