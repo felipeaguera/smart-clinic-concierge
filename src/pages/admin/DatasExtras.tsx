@@ -131,15 +131,43 @@ export default function DatasExtras() {
   // Create mutation
   const createMutation = useMutation({
     mutationFn: async () => {
-      const { error } = await supabase.from('schedule_openings').insert({
+      const dateStr = format(selectedDate, 'yyyy-MM-dd');
+      
+      // Check for duplicate - same doctor, same date, overlapping times
+      const { data: existing, error: checkError } = await supabase
+        .from('schedule_openings')
+        .select('id, hora_inicio, hora_fim')
+        .eq('doctor_id', doctorId)
+        .eq('data', dateStr);
+      
+      if (checkError) throw checkError;
+      
+      // Check for overlapping time ranges
+      const newStart = horaInicio;
+      const newEnd = horaFim;
+      
+      const hasOverlap = existing?.some(opening => {
+        const existStart = opening.hora_inicio.slice(0, 5);
+        const existEnd = opening.hora_fim.slice(0, 5);
+        // Overlap: NOT (new ends before existing starts OR new starts after existing ends)
+        return !(newEnd <= existStart || newStart >= existEnd);
+      });
+      
+      if (hasOverlap) {
+        throw new Error('Já existe uma agenda extra para este médico neste horário. Exclua a existente primeiro ou escolha outro horário.');
+      }
+      
+      const { data, error } = await supabase.from('schedule_openings').insert({
         doctor_id: doctorId,
-        data: format(selectedDate, 'yyyy-MM-dd'),
+        data: dateStr,
         hora_inicio: horaInicio,
         hora_fim: horaFim,
         tipo_atendimento: tipoAtendimento,
         motivo: motivo.trim() || null,
-      });
+      }).select();
+      
       if (error) throw error;
+      return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['schedule_openings'] });
@@ -149,17 +177,36 @@ export default function DatasExtras() {
     },
     onError: (error: Error) => {
       toast({
-        title: 'Erro',
+        title: 'Erro ao criar agenda extra',
         description: error.message,
         variant: 'destructive',
       });
     },
   });
 
-  // Delete mutation
+  // Delete mutation - check for existing appointments first
   const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from('schedule_openings').delete().eq('id', id);
+    mutationFn: async (opening: ScheduleOpening) => {
+      // Check if there are any appointments for this doctor on this date
+      const { data: appointments, error: checkError } = await supabase
+        .from('appointments')
+        .select('id, paciente_nome')
+        .eq('doctor_id', opening.doctor_id)
+        .eq('data', opening.data)
+        .neq('status', 'cancelado');
+      
+      if (checkError) throw checkError;
+      
+      if (appointments && appointments.length > 0) {
+        const patientNames = appointments
+          .map(a => a.paciente_nome || 'Paciente sem nome')
+          .slice(0, 3)
+          .join(', ');
+        const moreText = appointments.length > 3 ? ` e mais ${appointments.length - 3}` : '';
+        throw new Error(`Não é possível excluir esta agenda porque existem ${appointments.length} paciente(s) marcado(s) para este dia: ${patientNames}${moreText}`);
+      }
+      
+      const { error } = await supabase.from('schedule_openings').delete().eq('id', opening.id);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -168,7 +215,7 @@ export default function DatasExtras() {
     },
     onError: (error: Error) => {
       toast({
-        title: 'Erro',
+        title: 'Não foi possível excluir',
         description: error.message,
         variant: 'destructive',
       });
@@ -281,7 +328,7 @@ export default function DatasExtras() {
                           <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => deleteMutation.mutate(opening.id)}
+                            onClick={() => deleteMutation.mutate(opening)}
                             disabled={deleteMutation.isPending}
                           >
                             <Trash2 className="h-4 w-4 text-destructive" />
@@ -347,7 +394,7 @@ export default function DatasExtras() {
                             <Button
                               variant="ghost"
                               size="icon"
-                              onClick={() => deleteMutation.mutate(opening.id)}
+                              onClick={() => deleteMutation.mutate(opening)}
                               disabled={deleteMutation.isPending}
                             >
                               <Trash2 className="h-4 w-4 text-destructive" />

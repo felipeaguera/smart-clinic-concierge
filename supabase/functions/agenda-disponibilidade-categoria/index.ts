@@ -96,7 +96,8 @@ Deno.serve(async (req) => {
     // 3) Para cada médico, buscar disponibilidade
     const resultado: DoctorAvailability[] = []
     const duracaoMinutos = examType.duracao_minutos
-    const stepMinutos = 10
+    // PROMPT 3 FIX: O step agora é igual à duração do exame para gerar grade fixa
+    const stepMinutos = duracaoMinutos
 
     for (const doctor of doctors) {
       // Buscar regras do médico para esse dia

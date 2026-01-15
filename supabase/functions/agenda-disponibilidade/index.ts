@@ -177,8 +177,10 @@ Deno.serve(async (req) => {
     }
 
     // 4) Gerar blocos de horário possíveis
+    // PROMPT 3 FIX: O step agora é igual à duração do exame para gerar grade fixa
+    // Ex: agenda 14:00, duração 20min → 14:00, 14:20, 14:40, 15:00...
     const duracaoMinutos = examType.duracao_minutos
-    const stepMinutos = 10 // Intervalo de 10 minutos entre slots
+    const stepMinutos = duracaoMinutos // Grade fixa baseada na duração
 
     const allSlots: TimeSlot[] = []
 
