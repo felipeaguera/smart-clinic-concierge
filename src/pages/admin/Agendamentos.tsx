@@ -122,6 +122,26 @@ export default function Agendamentos() {
     enabled: !!selectedDoctorId,
   });
 
+  // Fetch schedule exceptions (days off)
+  const { data: scheduleExceptions } = useQuery({
+    queryKey: ['schedule_exceptions', selectedDoctorId, format(selectedDate, 'yyyy-MM-dd')],
+    queryFn: async () => {
+      if (!selectedDoctorId) return [];
+      const { data, error } = await supabase
+        .from('schedule_exceptions')
+        .select('*')
+        .eq('doctor_id', selectedDoctorId)
+        .eq('data', format(selectedDate, 'yyyy-MM-dd'));
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!selectedDoctorId,
+  });
+
+  // Check if selected date has an exception
+  const hasException = scheduleExceptions && scheduleExceptions.length > 0;
+  const exceptionReason = hasException ? scheduleExceptions[0].motivo : null;
+
   // Fetch exam types
   const { data: examTypes } = useQuery({
     queryKey: ['exam_types'],
@@ -336,16 +356,29 @@ export default function Agendamentos() {
                 </CardContent>
               </Card>
 
-              <AgendaTimeGrid
-                doctorRules={selectedDoctorRules}
-                scheduleOpenings={scheduleOpenings || []}
-                appointments={appointments || []}
-                selectedDate={selectedDate}
-                tipoAtendimento={tipoAtendimento}
-                onSlotClick={handleSlotClick}
-                onAppointmentClick={handleAppointmentClick}
-                isLoading={isLoadingAppointments}
-              />
+              {hasException ? (
+                <Card>
+                  <CardContent className="py-12">
+                    <div className="text-center text-amber-600">
+                      <p className="text-lg font-medium">⚠️ Médico indisponível nesta data</p>
+                      <p className="text-sm mt-1 text-muted-foreground">
+                        {exceptionReason || 'Exceção de agenda cadastrada (folga, férias, curso, etc.)'}
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+              ) : (
+                <AgendaTimeGrid
+                  doctorRules={selectedDoctorRules}
+                  scheduleOpenings={scheduleOpenings || []}
+                  appointments={appointments || []}
+                  selectedDate={selectedDate}
+                  tipoAtendimento={tipoAtendimento}
+                  onSlotClick={handleSlotClick}
+                  onAppointmentClick={handleAppointmentClick}
+                  isLoading={isLoadingAppointments}
+                />
+              )}
             </>
           ) : (
             <Card>
