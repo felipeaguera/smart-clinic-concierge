@@ -85,7 +85,9 @@ Primeiro VALIDE se o horário pedido está disponível.
 PASSO 3: BUSCA DA PRÓXIMA VAGA (somente quando não há horário específico)
 - Se o paciente pedir "próxima vaga/horário/data disponível" OU se não houver horários na data consultada,
   use buscar_proxima_vaga para encontrar automaticamente a PRIMEIRA disponibilidade.
-- Se o pedido for "próximo HORÁRIO" (ainda hoje), passe hora_minima (ex: hora atual) para evitar sugerir horários no passado.
+-- Sempre que a data for HOJE, usar hora_minima = hora atual, mesmo que o paciente não peça explicitamente.
+- A IA deve assumir que o paciente nunca deseja horários no passado.
+
 Fale APENAS OS 3 PROXIMOS HORÁRIOS DISPONÍVEIS. 
 
 PASSO 4: PARA ULTRASSONS
@@ -120,6 +122,19 @@ DATAS:
 - "segunda/terça" = próximo dia da semana
 - Formato interno: YYYY-MM-DD
 - Formato para paciente: DD/MM/YYYY
+
+⏱️ REGRA TEMPORAL ABSOLUTA (INVIOLÁVEL)
+
+- NUNCA sugerir horários no passado.
+- Se a data consultada for HOJE:
+  - Descartar automaticamente qualquer horário menor ou igual à HORA ATUAL do contexto.
+- Se TODOS os horários de HOJE já tiverem passado:
+  - Informar que não há mais horários hoje
+  - Buscar automaticamente a próxima data disponível.
+- A IA NÃO pode assumir que horários retornados pelo backend são válidos no tempo.
+- Sempre validar: horário > hora atual QUANDO data = hoje.
+- É PROIBIDO oferecer horários já encerrados, mesmo que estejam no retorno da busca.
+
 
 MÚLTIPLOS ITENS:
 - Tentar agendar TODOS no mesmo dia
@@ -365,34 +380,55 @@ serve(async (req) => {
 
     // Pré-processar a última mensagem do usuário para ajudar a IA
     const lastUserMessage = [...messages].reverse().find((m) => m.role === "user")?.content || "";
-    
+
     // ═══════════════════════════════════════
     // DETECÇÃO AUTOMÁTICA DE REAGENDAMENTO
     // ═══════════════════════════════════════
     const rescheduleKeywords = [
-      "trocar horario", "trocar meu horario", "trocar o horario",
-      "reagendar", "remarcar", "mudar horario", "alterar horario",
-      "mudar meu horario", "alterar meu horario", "mudar a data",
-      "trocar a data", "alterar a data", "trocar de horario",
-      "preciso trocar", "quero trocar", "gostaria de trocar",
-      "preciso reagendar", "quero reagendar", "gostaria de reagendar",
-      "preciso remarcar", "quero remarcar", "gostaria de remarcar"
+      "trocar horario",
+      "trocar meu horario",
+      "trocar o horario",
+      "reagendar",
+      "remarcar",
+      "mudar horario",
+      "alterar horario",
+      "mudar meu horario",
+      "alterar meu horario",
+      "mudar a data",
+      "trocar a data",
+      "alterar a data",
+      "trocar de horario",
+      "preciso trocar",
+      "quero trocar",
+      "gostaria de trocar",
+      "preciso reagendar",
+      "quero reagendar",
+      "gostaria de reagendar",
+      "preciso remarcar",
+      "quero remarcar",
+      "gostaria de remarcar",
     ];
     const normalizedUserMessage = normalizeText(lastUserMessage);
-    const isRescheduleRequest = rescheduleKeywords.some(kw => normalizedUserMessage.includes(kw));
+    const isRescheduleRequest = rescheduleKeywords.some((kw) => normalizedUserMessage.includes(kw));
 
     if (isRescheduleRequest) {
       console.log("Reschedule request detected - forcing handoff");
       return new Response(
         JSON.stringify({
-          message: "Entendi que você precisa reagendar seu horário! 😊 Vou encaminhar você para um atendente que poderá ajudá-la com a alteração. Um momento, por favor!",
+          message:
+            "Entendi que você precisa reagendar seu horário! 😊 Vou encaminhar você para um atendente que poderá ajudá-la com a alteração. Um momento, por favor!",
           humanHandoff: true,
-          toolsUsed: [{ name: "encaminhar_humano", result: { encaminhado: true, motivo: "Reagendamento/troca de horário de consulta ou exame" } }],
+          toolsUsed: [
+            {
+              name: "encaminhar_humano",
+              result: { encaminhado: true, motivo: "Reagendamento/troca de horário de consulta ou exame" },
+            },
+          ],
         }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
-    
+
     const { foundExams, foundDoctors, unresolved } = extractMentionedItems(lastUserMessage, examTypes, doctors);
 
     // Build simplified context with pricing focus
