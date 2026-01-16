@@ -271,7 +271,28 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      agenda_publica: {
+        Row: {
+          data: string | null
+          doctor_id: string | null
+          duracao_minutos: number | null
+          hora_fim: string | null
+          hora_inicio: string | null
+          id: string | null
+          is_encaixe: boolean | null
+          status: string | null
+          tipo_atendimento: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "appointments_doctor_id_fkey"
+            columns: ["doctor_id"]
+            isOneToOne: false
+            referencedRelation: "doctors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
       has_role: {
