@@ -72,10 +72,14 @@ Deno.serve(async (req) => {
       )
     }
 
-    // Calcular dia da semana
-    const dateObj = new Date(data + 'T00:00:00')
+    // Calcular dia da semana (0 = Domingo, 1 = Segunda, etc.)
+    // IMPORTANTE: Usar parse manual para evitar problemas de timezone
+    // A data vem no formato YYYY-MM-DD, extraímos diretamente os componentes
+    const [year, month, day] = data.split('-').map(Number)
+    // Criar data ao meio-dia para evitar problemas de DST
+    const dateObj = new Date(year, month - 1, day, 12, 0, 0)
     const diaSemana = dateObj.getDay()
-    console.log('Dia da semana:', diaSemana)
+    console.log('Dia da semana:', diaSemana, `(data: ${data})`)
 
     // 2) Buscar TODOS os médicos ativos
     const { data: doctors, error: doctorsError } = await supabase
