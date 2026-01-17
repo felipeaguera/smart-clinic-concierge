@@ -457,8 +457,29 @@ serve(async (req) => {
     };
 
     // Get current date for natural language date interpretation
+    // IMPORTANTE: Usar fuso horário do Brasil (America/Sao_Paulo)
     const now = new Date();
-    const currentDate = now.toISOString().split("T")[0];
+    const brasilFormatter = new Intl.DateTimeFormat("pt-BR", {
+      timeZone: "America/Sao_Paulo",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+    const parts = brasilFormatter.formatToParts(now);
+    const getPart = (type: string) => parts.find(p => p.type === type)?.value || "";
+    
+    const brasilYear = getPart("year");
+    const brasilMonth = getPart("month");
+    const brasilDay = getPart("day");
+    const brasilHour = parseInt(getPart("hour"), 10);
+    const brasilMinute = parseInt(getPart("minute"), 10);
+    
+    const currentDate = `${brasilYear}-${brasilMonth}-${brasilDay}`;
+    const nowMinutesBrasil = brasilHour * 60 + brasilMinute;
+    
     const weekdays = [
       "domingo",
       "segunda-feira",
@@ -468,8 +489,11 @@ serve(async (req) => {
       "sexta-feira",
       "sábado",
     ];
-    const currentWeekday = weekdays[now.getDay()];
-    const formattedDate = `${now.getDate().toString().padStart(2, "0")}/${(now.getMonth() + 1).toString().padStart(2, "0")}/${now.getFullYear()}`;
+    // Calcular dia da semana baseado na data do Brasil
+    const brasilDate = new Date(`${currentDate}T12:00:00`);
+    const currentWeekday = weekdays[brasilDate.getDay()];
+    const formattedDate = `${brasilDay}/${brasilMonth}/${brasilYear}`;
+    const currentTime = `${brasilHour.toString().padStart(2, "0")}:${brasilMinute.toString().padStart(2, "0")}`;
 
     // Context info simplificado
     const contextInfo = `
@@ -478,6 +502,7 @@ DADOS DO SISTEMA
 ═══════════════════════════════════════
 
 DATA ATUAL: ${currentDate} (${currentWeekday}, ${formattedDate})
+HORA ATUAL: ${currentTime} (horário de Brasília)
 
 MÉDICOS:
 ${doctors.map((d) => `• ${d.nome} (${d.especialidade}) [ID: ${d.id}]`).join("\n")}
@@ -810,7 +835,8 @@ ${examTypes
               return hh * 60 + mm;
             };
 
-            const nowMinutes = now.getHours() * 60 + now.getMinutes();
+            // Usar horário do Brasil, não UTC
+            const nowMinutes = nowMinutesBrasil;
 
             const computeMinMinutesForDay0 = (date: string) => {
               // Só faz sentido filtrar no DIA 0 (data_inicial)
