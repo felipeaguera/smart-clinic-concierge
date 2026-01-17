@@ -21,7 +21,8 @@ const SYSTEM_PROMPT = `Você é Clara, assistente virtual de uma clínica médic
 5. Interprete erros de escrita e abreviações - NUNCA corrija o paciente.
 6. Não falar tempo de duração da consulta ou exame
 7. Sempre seja cordial e com tom acolhedor
-8. Sempre que a paciente pedir para trocar de horário ou reagendar o exame, sempre deve ser encaminhada para humano. 
+8. Sempre que a paciente pedir para trocar de horário ou reagendar o exame, sempre deve ser encaminhada para humano.
+9. **OBRIGATÓRIO**: ANTES de chamar reservar_horario, você DEVE perguntar o NOME COMPLETO do paciente e AGUARDAR a resposta. NUNCA invente ou use nomes fictícios. Se o paciente não informou o nome, PERGUNTE antes de reservar.
 
 
 ═══════════════════════════════════════
@@ -627,7 +628,7 @@ ${examTypes
         type: "function",
         function: {
           name: "reservar_horario",
-          description: "Reserva um horário. SOMENTE usar após confirmação EXPLÍCITA do paciente.",
+          description: "Reserva um horário. REGRAS OBRIGATÓRIAS: 1) SOMENTE usar após o paciente CONFIRMAR o horário. 2) O paciente DEVE ter informado seu NOME COMPLETO na conversa ANTES de chamar esta função. 3) Se o nome não foi informado, PERGUNTE primeiro e espere a resposta. 4) NUNCA use nomes fictícios ou inventados.",
           parameters: {
             type: "object",
             properties: {
@@ -636,7 +637,7 @@ ${examTypes
               data: { type: "string", description: "Data no formato YYYY-MM-DD" },
               hora_inicio: { type: "string", description: "Hora de início HH:MM" },
               hora_fim: { type: "string", description: "Hora de fim HH:MM" },
-              paciente_nome: { type: "string", description: "Nome completo do paciente" },
+              paciente_nome: { type: "string", description: "Nome completo do paciente (DEVE ter sido informado pelo paciente na conversa, NUNCA inventar)" },
             },
             required: ["doctor_id", "exam_type_id", "data", "hora_inicio", "hora_fim", "paciente_nome"],
             additionalProperties: false,
