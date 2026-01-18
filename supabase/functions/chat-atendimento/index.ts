@@ -26,6 +26,11 @@ const SYSTEM_PROMPT = `Você é Clara, assistente virtual de uma clínica médic
 10. **DESAMBIGUAÇÃO OBRIGATÓRIA**: Quando o paciente mencionar um termo genérico (ex: "ultrassom", "exame", "consulta") e existirem MÚLTIPLOS tipos disponíveis no cadastro, você DEVE perguntar QUAL TIPO ESPECÍFICO antes de buscar disponibilidade ou dar orçamento. NUNCA assuma um tipo específico sem confirmação.
     - Exemplo: Se o paciente diz "quero marcar um ultrassom", PERGUNTE: "Temos alguns tipos de ultrassom disponíveis: Ultrassom de Abdome e Ultrassom Morfológico. Qual você precisa?"
     - SOMENTE após o paciente confirmar o tipo específico, prossiga com a busca de disponibilidade.
+11. **CORRESPONDÊNCIA EXATA**: Quando o paciente pedir orçamento de exames ESPECÍFICOS (ex: "17 ALFA HIDROXIPROGESTERONA, ÁCIDO ÚRICO"):
+    - Responder SOMENTE com os exames MENCIONADOS pelo paciente.
+    - NUNCA incluir consultas, ultrassons ou outros exames que o paciente NÃO pediu.
+    - NUNCA listar todos os exames do cadastro - apenas os que correspondem EXATAMENTE ao pedido.
+    - Se não encontrar um exame mencionado, informe que não está cadastrado.
 
 
 ═══════════════════════════════════════
@@ -33,30 +38,60 @@ const SYSTEM_PROMPT = `Você é Clara, assistente virtual de uma clínica médic
 ═══════════════════════════════════════
 Quando o paciente pedir orçamento:
 
-PASSO 1: Identificar itens na mensagem (exames, consultas)
+PASSO 1: Identificar APENAS os itens EXATAMENTE mencionados na mensagem
+- NÃO adicionar exames que o paciente NÃO pediu
+- Buscar correspondência EXATA ou muito próxima dos termos mencionados
 - Normalizar: "usg/ultra/ultrason" → Ultrassom
 - Normalizar: "eco" → Ultrassom
 - Normalizar: "morfo" → Ultrassom Morfológico
 - Ignorar erros de escrita
 
-PASSO 2: Para cada item identificado, verificar no cadastro:
+⚠️ REGRA CRÍTICA: RESPONDER APENAS COM OS EXAMES QUE O PACIENTE MENCIONOU.
+- Se o paciente pediu "17 ALFA HIDROXIPROGESTERONA, ÁCIDO ÚRICO", responder SOMENTE esses dois.
+- NUNCA listar consultas ou ultrassons se o paciente não os mencionou.
+- NUNCA incluir exames que apenas "parecem" relacionados.
+
+PASSO 2: Separar por CATEGORIA (quando múltiplos itens)
+As categorias são DISTINTAS e devem ser agrupadas:
+- LABORATÓRIO: Exames de sangue, urina, etc. (não precisam de agendamento)
+- ULTRASSOM: Exames de imagem com ultrassom (precisam de agendamento)
+- CONSULTA: Atendimento médico (precisam de agendamento)
+
+PASSO 3: Para cada item, verificar no cadastro:
 - Se has_price = true → usar o valor cadastrado
 - Se has_price = false → marcar como "sem preço"
 
-PASSO 3: Responder:
-- UM item com preço: "[Nome do Exame]: R$ X. Deseja agendar?"
-- MÚLTIPLOS itens com preço: listar cada + total
-- ALGUNS sem preço: listar os que têm preço, depois avisar sobre os demais e encaminhar
+PASSO 4: Responder AGRUPADO por categoria:
 
-Formato para múltiplos itens:
-"Segue os valores:
-- Item 1: R$ X
-- Item 2: R$ Y
-Total: R$ Z
+Formato para múltiplos itens de LABORATÓRIO:
+"📋 Exames de Laboratório:
+- 17 Alfa Hidroxiprogesterona: R$ X
+- Ácido Úrico: R$ Y
+- Ácido Fólico: R$ Z
+Subtotal Laboratório: R$ XX
 
-Deseja agendar?"
+As coletas são realizadas de segunda a sexta:
+- Manhã: 7:30 às 11:00
+- Tarde: 13:00 às 17:00
+Não é necessário agendar, basta comparecer."
+
+Formato se tiver TAMBÉM ultrassom ou consulta:
+"📋 Exames de Laboratório:
+[lista com valores]
+Subtotal: R$ XX
+
+🔬 Ultrassons:
+[lista com valores]
+Subtotal: R$ YY
+
+🩺 Consultas:
+[lista com valores]
+Subtotal: R$ ZZ
+
+Total Geral: R$ TOTAL"
 
 ⚠️ NÃO informar duração, preparo ou orientações no orçamento.
+⚠️ Se o paciente pediu SOMENTE exames de laboratório, NÃO pergunte sobre agendamento - informe apenas os horários de coleta.
 
 ═══════════════════════════════════════
 3. FLUXO DE AGENDAMENTO
@@ -292,31 +327,65 @@ const EXAM_ALIASES: Record<string, string[]> = {
   consulta: ["consulta", "atendimento"],
 };
 
-// Verifica se um termo corresponde a um exame
+// Verifica se um termo corresponde a um exame - MAIS RIGOROSO
 function matchesExam(examName: string, searchTerm: string): boolean {
   const normalizedExam = normalizeText(examName);
   const normalizedSearch = normalizeText(searchTerm);
 
-  // Match direto
-  if (normalizedExam.includes(normalizedSearch) || normalizedSearch.includes(normalizedExam)) {
+  // Ignorar termos muito curtos (menos de 4 caracteres) para evitar falsos positivos
+  if (normalizedSearch.length < 4) {
+    return false;
+  }
+
+  // Match direto - o nome do exame está contido no termo de busca ou vice-versa
+  if (normalizedExam === normalizedSearch) {
     return true;
   }
 
-  // Match por palavras
-  const searchWords = normalizedSearch.split(" ");
-  const examWords = normalizedExam.split(" ");
+  // Match parcial - mas precisa ser mais de 70% do nome do exame
+  if (normalizedSearch.includes(normalizedExam) || normalizedExam.includes(normalizedSearch)) {
+    const shorter = normalizedSearch.length < normalizedExam.length ? normalizedSearch : normalizedExam;
+    const longer = normalizedSearch.length >= normalizedExam.length ? normalizedSearch : normalizedExam;
+    if (shorter.length >= longer.length * 0.5) {
+      return true;
+    }
+  }
 
-  const matchingWords = searchWords.filter((sw) => examWords.some((ew) => ew.includes(sw) || sw.includes(ew)));
+  // Match por palavras-chave principais (precisa ter palavras significativas em comum)
+  const searchWords = normalizedSearch.split(" ").filter(w => w.length >= 3);
+  const examWords = normalizedExam.split(" ").filter(w => w.length >= 3);
+  
+  // Para exames de lab com nomes compostos, precisa de match mais preciso
+  const significantMatches = searchWords.filter((sw) => 
+    examWords.some((ew) => {
+      // Match exato da palavra
+      if (ew === sw) return true;
+      // Ou pelo menos 80% de similaridade
+      if (sw.length >= 5 && (ew.includes(sw) || sw.includes(ew))) {
+        const shorter = sw.length < ew.length ? sw : ew;
+        const longer = sw.length >= ew.length ? sw : ew;
+        return shorter.length >= longer.length * 0.8;
+      }
+      return false;
+    })
+  );
 
-  if (matchingWords.length >= Math.min(2, searchWords.length)) {
+  // Precisa de pelo menos 1 palavra significativa em comum para nomes curtos
+  // ou 2+ palavras para nomes longos
+  const requiredMatches = searchWords.length <= 2 ? 1 : 2;
+  if (significantMatches.length >= requiredMatches) {
     return true;
   }
 
-  // Match por aliases
+  // Match por aliases - mas apenas se a palavra-chave completa estiver presente
   for (const [key, aliases] of Object.entries(EXAM_ALIASES)) {
-    if (normalizedExam.includes(key)) {
+    const keyNormalized = normalizeText(key);
+    if (normalizedExam.includes(keyNormalized)) {
       for (const alias of aliases) {
-        if (normalizedSearch.includes(alias)) {
+        const aliasNormalized = normalizeText(alias);
+        // Verificar se o alias está como palavra completa, não apenas substring
+        const aliasRegex = new RegExp(`\\b${aliasNormalized}\\b`);
+        if (aliasRegex.test(normalizedSearch)) {
           return true;
         }
       }
@@ -324,6 +393,22 @@ function matchesExam(examName: string, searchTerm: string): boolean {
   }
 
   return false;
+}
+
+// Separa a mensagem em itens individuais (por vírgula, "e", quebra de linha, etc)
+function splitMessageIntoItems(message: string): string[] {
+  const normalized = message
+    .replace(/\n/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  
+  // Separar por vírgulas, "e", ponto e vírgula, etc
+  const items = normalized
+    .split(/[,;]|\s+e\s+/)
+    .map(item => item.trim())
+    .filter(item => item.length > 0);
+  
+  return items;
 }
 
 // Extrai itens mencionados na mensagem do paciente
@@ -341,11 +426,33 @@ function extractMentionedItems(
   const foundDoctors: any[] = [];
   const unresolved: string[] = [];
 
-  // Tentar encontrar exames
-  for (const exam of examTypes) {
-    if (matchesExam(exam.nome, message)) {
-      if (!foundExams.find((e) => e.id === exam.id)) {
-        foundExams.push(exam);
+  // Separar a mensagem em itens individuais para matching mais preciso
+  const messageItems = splitMessageIntoItems(message);
+  
+  // Para cada item mencionado na mensagem, buscar correspondência EXATA
+  for (const item of messageItems) {
+    let foundMatch = false;
+    
+    for (const exam of examTypes) {
+      if (matchesExam(exam.nome, item)) {
+        if (!foundExams.find((e) => e.id === exam.id)) {
+          foundExams.push(exam);
+          foundMatch = true;
+        }
+      }
+    }
+    
+    // Se não encontrou match para este item, adicionar aos não resolvidos
+    if (!foundMatch && item.length > 3) {
+      // Filtrar palavras comuns que não são nomes de exame
+      const stopWords = ["ola", "oi", "preciso", "quero", "gostaria", "fazer", "marcar", 
+                         "orcamento", "orçamento", "valor", "valores", "preco", "preço",
+                         "desses", "exames", "exame", "quanto", "custa", "custam"];
+      const itemNormalized = normalizeText(item);
+      const isStopWord = stopWords.some(sw => itemNormalized === sw || itemNormalized.startsWith(sw + " "));
+      
+      if (!isStopWord && !unresolved.includes(item)) {
+        unresolved.push(item);
       }
     }
   }
