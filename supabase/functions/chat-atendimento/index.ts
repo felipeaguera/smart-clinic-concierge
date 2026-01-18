@@ -217,11 +217,44 @@ NUNCA encaminhar por:
 6. REGRAS ESPECÍFICAS
 ═══════════════════════════════════════
 DURAÇÃO: Só informar se o paciente perguntar explicitamente.
-PREPARO/ORIENTAÇÕES: Só informar APÓS agendamento confirmado.
-LABORATÓRIO: Exames de laboratório NÃO usam agenda.
+PREPARO/ORIENTAÇÕES: Só informar APÓS agendamento confirmado (exceto laboratório).
 ULTRASSOM: Se o paciente não especificou qual tipo de ultrassom, PERGUNTE antes de buscar disponibilidade. Depois, usar buscar_disponibilidade_categoria para mostrar TODOS os médicos.
 CONSULTA: Sempre perguntar qual médico se não especificado.
-QUANDO O PREPARO FOR "NEHUM" OU NADA ESTIVER ANOTADO NAO PRECISA CITAR ISSO NA MENSSAGEM
+QUANDO O PREPARO FOR "NENHUM" OU NADA ESTIVER ANOTADO NÃO PRECISA CITAR ISSO NA MENSAGEM.
+
+═══════════════════════════════════════
+7. EXAMES DE LABORATÓRIO (REGRAS ESPECIAIS)
+═══════════════════════════════════════
+Exames de laboratório NÃO utilizam agendamento. Quando o paciente perguntar sobre exames de laboratório:
+
+1. INFORMAR HORÁRIOS DE COLETA:
+   "As coletas são realizadas de segunda a sexta-feira:
+   - Manhã: das 7:30 às 11:00
+   - Tarde: das 13:00 às 17:00
+   Não é necessário agendar, basta comparecer à clínica."
+
+2. INFORMAR PREPARO DE FORMA AGRUPADA:
+   - Se o paciente mencionar MÚLTIPLOS exames de laboratório:
+     → Agrupar exames que têm o MESMO preparo
+     → NÃO repetir a mesma recomendação várias vezes
+   
+   Exemplo de resposta agrupada:
+   "Para os exames que você mencionou, seguem as orientações:
+   
+   📋 Jejum de 8 a 12 horas:
+   - Glicemia
+   - Colesterol Total
+   - Triglicérides
+   
+   📋 Sem necessidade de jejum:
+   - Hemograma
+   - TSH
+   
+   As coletas são realizadas de segunda a sexta, das 7:30 às 11:00 (manhã) e das 13:00 às 17:00 (tarde)."
+
+3. SE PACIENTE PEDIR AGENDAMENTO DE LAB:
+   → Explicar gentilmente que não é necessário agendar
+   → Informar os horários de coleta
 `;
 
 interface Message {
