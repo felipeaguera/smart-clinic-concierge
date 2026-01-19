@@ -1,9 +1,21 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { z } from 'https://deno.land/x/zod@v3.22.4/mod.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
+
+// Schema de validação com Zod
+const reservaSchema = z.object({
+  doctor_id: z.string().uuid({ message: 'ID do médico inválido' }),
+  exam_type_id: z.string().uuid({ message: 'ID do exame inválido' }),
+  data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, { message: 'Data deve estar no formato YYYY-MM-DD' }),
+  hora_inicio: z.string().regex(/^\d{2}:\d{2}$/, { message: 'Hora de início deve estar no formato HH:MM' }),
+  hora_fim: z.string().regex(/^\d{2}:\d{2}$/, { message: 'Hora de fim deve estar no formato HH:MM' }),
+  paciente_nome: z.string().trim().min(2, { message: 'Nome deve ter pelo menos 2 caracteres' }).max(100, { message: 'Nome deve ter no máximo 100 caracteres' }).optional(),
+  paciente_telefone: z.string().trim().max(20, { message: 'Telefone deve ter no máximo 20 caracteres' }).optional()
+})
 
 Deno.serve(async (req) => {
   // Handle CORS preflight requests
@@ -21,38 +33,23 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json()
-    const { doctor_id, exam_type_id, data, hora_inicio, hora_fim, paciente_nome, paciente_telefone } = body
 
-    console.log('Payload recebido:', { doctor_id, exam_type_id, data, hora_inicio, hora_fim, paciente_nome, paciente_telefone })
-
-    // Validar parâmetros obrigatórios
-    if (!doctor_id || !exam_type_id || !data || !hora_inicio || !hora_fim) {
-      console.error('Parâmetros faltando:', body)
+    // Validação com Zod
+    const parseResult = reservaSchema.safeParse(body)
+    if (!parseResult.success) {
+      console.error('Validação falhou:', parseResult.error.issues)
       return new Response(
-        JSON.stringify({ error: 'Parâmetros obrigatórios: doctor_id, exam_type_id, data, hora_inicio, hora_fim' }),
+        JSON.stringify({ 
+          error: 'Dados inválidos', 
+          details: parseResult.error.issues.map(i => i.message) 
+        }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
-    // Validar formato da data
-    const dateRegex = /^\d{4}-\d{2}-\d{2}$/
-    if (!dateRegex.test(data)) {
-      console.error('Formato de data inválido:', data)
-      return new Response(
-        JSON.stringify({ error: 'Formato de data inválido. Use YYYY-MM-DD' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
+    const { doctor_id, exam_type_id, data, hora_inicio, hora_fim, paciente_nome, paciente_telefone } = parseResult.data
 
-    // Validar formato dos horários
-    const timeRegex = /^\d{2}:\d{2}$/
-    if (!timeRegex.test(hora_inicio) || !timeRegex.test(hora_fim)) {
-      console.error('Formato de horário inválido:', { hora_inicio, hora_fim })
-      return new Response(
-        JSON.stringify({ error: 'Formato de horário inválido. Use HH:MM' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
+    console.log('Payload validado:', { doctor_id, exam_type_id, data, hora_inicio, hora_fim, paciente_nome: paciente_nome ? '[REDACTED]' : null, paciente_telefone: paciente_telefone ? '[REDACTED]' : null })
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
