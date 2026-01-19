@@ -32,7 +32,7 @@ import {
 } from '@/components/ui/table';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Pencil, Trash2, Loader2, Stethoscope, Activity, FlaskConical } from 'lucide-react';
+import { Plus, Pencil, Trash2, Loader2, Stethoscope, Activity, FlaskConical, Search } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -77,6 +77,7 @@ export default function TiposExame() {
   const [hasPrice, setHasPrice] = useState(false);
   const [pricePrivate, setPricePrivate] = useState('');
   const [activeTab, setActiveTab] = useState('consulta');
+  const [searchTerm, setSearchTerm] = useState('');
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -92,15 +93,18 @@ export default function TiposExame() {
     },
   });
 
-  // Agrupa exames por categoria
+  // Agrupa exames por categoria com filtro de busca
   const examsByCategory = useMemo(() => {
     if (!examTypes) return { consulta: [], ultrassom: [], laboratorio: [] };
+    const filtered = examTypes.filter((e) =>
+      e.nome.toLowerCase().includes(searchTerm.toLowerCase())
+    );
     return {
-      consulta: examTypes.filter((e) => e.categoria === 'consulta'),
-      ultrassom: examTypes.filter((e) => e.categoria === 'ultrassom'),
-      laboratorio: examTypes.filter((e) => e.categoria === 'laboratorio'),
+      consulta: filtered.filter((e) => e.categoria === 'consulta'),
+      ultrassom: filtered.filter((e) => e.categoria === 'ultrassom'),
+      laboratorio: filtered.filter((e) => e.categoria === 'laboratorio'),
     };
-  }, [examTypes]);
+  }, [examTypes, searchTerm]);
 
   const mutation = useMutation({
     mutationFn: async (data: {
@@ -338,19 +342,30 @@ export default function TiposExame() {
             </div>
           ) : (
             <Tabs value={activeTab} onValueChange={setActiveTab}>
-              <TabsList className="grid w-full grid-cols-3 mb-6">
-                {CATEGORIAS.map((cat) => {
-                  const Icon = cat.icon;
-                  const count = examsByCategory[cat.value as keyof typeof examsByCategory]?.length || 0;
-                  return (
-                    <TabsTrigger key={cat.value} value={cat.value} className="flex items-center gap-2">
-                      <Icon className="h-4 w-4" />
-                      <span>{cat.label}</span>
-                      <span className="text-xs text-muted-foreground">({count})</span>
-                    </TabsTrigger>
-                  );
-                })}
-              </TabsList>
+              <div className="flex flex-col sm:flex-row sm:items-center gap-4 mb-6">
+                <TabsList className="grid w-full sm:w-auto grid-cols-3">
+                  {CATEGORIAS.map((cat) => {
+                    const Icon = cat.icon;
+                    const count = examsByCategory[cat.value as keyof typeof examsByCategory]?.length || 0;
+                    return (
+                      <TabsTrigger key={cat.value} value={cat.value} className="flex items-center gap-2">
+                        <Icon className="h-4 w-4" />
+                        <span>{cat.label}</span>
+                        <span className="text-xs text-muted-foreground">({count})</span>
+                      </TabsTrigger>
+                    );
+                  })}
+                </TabsList>
+                <div className="relative flex-1 sm:max-w-xs">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Buscar exame..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-9"
+                  />
+                </div>
+              </div>
 
               {CATEGORIAS.map((cat) => (
                 <TabsContent key={cat.value} value={cat.value} className="space-y-4">
