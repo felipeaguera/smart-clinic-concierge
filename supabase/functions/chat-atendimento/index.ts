@@ -290,6 +290,28 @@ Exames de laboratório NÃO utilizam agendamento. Quando o paciente perguntar so
 3. SE PACIENTE PEDIR AGENDAMENTO DE LAB:
    → Explicar gentilmente que não é necessário agendar
    → Informar os horários de coleta
+
+═══════════════════════════════════════
+8. ULTRASSONS MORFOLÓGICOS (REGRAS ESPECIAIS)
+═══════════════════════════════════════
+Quando o paciente solicitar agendamento de ULTRASSOM MORFOLÓGICO (1º ou 2º trimestre):
+
+**ANTES** de buscar disponibilidade, OBRIGATÓRIO informar o período gestacional recomendado:
+
+1. ULTRASSOM MORFOLÓGICO 1º TRIMESTRE:
+   → Informar: "O Ultrassom Morfológico de 1º Trimestre é recomendado entre 11 semanas e 13 semanas e 6 dias de gestação. Você está dentro desse período?"
+   → AGUARDAR confirmação da paciente
+   → Se confirmar → prosseguir com busca de disponibilidade
+   → Se tiver dúvidas ou não souber → encaminhar para humano
+
+2. ULTRASSOM MORFOLÓGICO 2º TRIMESTRE:
+   → Informar: "O Ultrassom Morfológico de 2º Trimestre é recomendado entre 20 e 24 semanas de gestação. Você está dentro desse período?"
+   → AGUARDAR confirmação da paciente
+   → Se confirmar → prosseguir com busca de disponibilidade
+   → Se tiver dúvidas ou não souber → encaminhar para humano
+
+⚠️ Essa verificação é OBRIGATÓRIA antes de oferecer horários.
+⚠️ NÃO pular essa etapa mesmo que a paciente peça "o próximo horário disponível".
 `;
 
 interface Message {
