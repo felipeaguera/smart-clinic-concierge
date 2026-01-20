@@ -107,7 +107,7 @@ export default function Agendamentos() {
     },
   });
 
-  // Fetch schedule openings (extra schedules)
+  // Fetch schedule openings for selected doctor and date
   const { data: scheduleOpenings } = useQuery({
     queryKey: ['schedule_openings', selectedDoctorId, format(selectedDate, 'yyyy-MM-dd')],
     queryFn: async () => {
@@ -121,6 +121,19 @@ export default function Agendamentos() {
       return data as ScheduleOpening[];
     },
     enabled: !!selectedDoctorId,
+  });
+
+  // Fetch ALL schedule openings to know which doctors have extra dates
+  const { data: allScheduleOpenings } = useQuery({
+    queryKey: ['all_schedule_openings'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('schedule_openings')
+        .select('doctor_id, tipo_atendimento')
+        .gte('data', format(new Date(), 'yyyy-MM-dd'));
+      if (error) throw error;
+      return data as { doctor_id: string; tipo_atendimento: string }[];
+    },
   });
 
   // Fetch schedule exceptions (days off)
@@ -175,18 +188,28 @@ export default function Agendamentos() {
     enabled: !!selectedDoctorId,
   });
 
-  // Filter doctors based on type
+  // Filter doctors based on type (includes doctors with rules OR schedule_openings)
   const filteredDoctors = useMemo(() => {
     if (!doctors || !doctorRules) return [];
     
     return doctors.filter((doctor) => {
+      // Check if doctor has rules for this type
       const rules = doctorRules.filter((r) => r.doctor_id === doctor.id);
-      return rules.some(
+      const hasMatchingRules = rules.some(
         (rule) =>
           rule.tipo_atendimento === 'ambos' || rule.tipo_atendimento === tipoAtendimento
       );
+      
+      // Check if doctor has schedule_openings for this type (doctors without fixed days)
+      const hasMatchingOpenings = allScheduleOpenings?.some(
+        (opening) =>
+          opening.doctor_id === doctor.id &&
+          (opening.tipo_atendimento === 'ambos' || opening.tipo_atendimento === tipoAtendimento)
+      );
+      
+      return hasMatchingRules || hasMatchingOpenings;
     });
-  }, [doctors, doctorRules, tipoAtendimento]);
+  }, [doctors, doctorRules, allScheduleOpenings, tipoAtendimento]);
 
   // Selected doctor rules
   const selectedDoctorRules = useMemo(() => {
