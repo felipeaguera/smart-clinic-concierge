@@ -15,6 +15,7 @@ interface Appointment {
 interface AgendaAppointmentCardProps {
   appointment: Appointment;
   onClick: () => void;
+  compact?: boolean;
 }
 
 const STATUS_CONFIG: Record<string, { bg: string; border: string; text: string; label: string }> = {
@@ -62,7 +63,7 @@ function timeToMinutes(time: string): number {
   return hours * 60 + minutes;
 }
 
-export function AgendaAppointmentCard({ appointment, onClick }: AgendaAppointmentCardProps) {
+export function AgendaAppointmentCard({ appointment, onClick, compact = false }: AgendaAppointmentCardProps) {
   const isEncaixe = appointment.is_encaixe === true;
   
   // Use encaixe colors if it's an encaixe, otherwise use status colors
@@ -76,6 +77,41 @@ export function AgendaAppointmentCard({ appointment, onClick }: AgendaAppointmen
   // Calculate duration from hora_inicio and hora_fim
   const durationMinutes = timeToMinutes(appointment.hora_fim) - timeToMinutes(appointment.hora_inicio);
 
+  // Compact version for side-by-side display
+  if (compact) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className={cn(
+          'w-full rounded-md border-l-4 px-1.5 py-1 text-left transition-all hover:shadow-md cursor-pointer',
+          isEncaixe ? ENCAIXE_CONFIG.bg : config.bg,
+          isEncaixe ? ENCAIXE_CONFIG.border : config.border,
+          isEncaixe ? ENCAIXE_CONFIG.text : config.text
+        )}
+      >
+        <div className="flex items-center gap-1">
+          {isEncaixe && (
+            <UserPlus className="h-3 w-3 text-amber-600 shrink-0" />
+          )}
+          <span className="font-semibold text-xs truncate">
+            {patientName.split(' ')[0]}
+          </span>
+          {isEncaixe && (
+            <span className="text-[9px] font-medium bg-amber-200 text-amber-800 px-0.5 rounded shrink-0">
+              E
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-1 mt-0.5 text-[10px] opacity-80">
+          <Clock className="h-2.5 w-2.5 shrink-0" />
+          <span>{durationMinutes}min</span>
+        </div>
+      </button>
+    );
+  }
+
+  // Full version
   return (
     <button
       type="button"

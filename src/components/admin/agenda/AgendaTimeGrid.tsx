@@ -56,9 +56,9 @@ interface TimeSlotRow {
   time: string;
   minutes: number;
   isWithinWorkHours: boolean;
-  appointment?: Appointment; // Appointment that STARTS at this slot
-  continuingAppointment?: Appointment; // Appointment that CONTINUES through this slot
-  isOccupied: boolean; // Slot is occupied by any appointment (starting or continuing)
+  appointments: Appointment[]; // All appointments that START at this slot
+  continuingAppointments: Appointment[]; // All appointments that CONTINUE through this slot (excluding encaixes)
+  isOccupied: boolean;
   isFree: boolean;
   freeUntil?: string;
   availableMinutes?: number;
@@ -125,7 +125,6 @@ export function AgendaTimeGrid({
     
     for (let min = dayStart; min < dayEnd; min += 10) {
       const time = minutesToTime(min);
-      const slotEnd = min + 10;
       
       // Check if this time is within work hours (rules OR openings)
       const isWithinRules = rulesForDay.some(rule => {
@@ -142,31 +141,37 @@ export function AgendaTimeGrid({
       
       const isWithinWork = isWithinRules || isWithinOpenings;
 
-      // Find appointment that STARTS at this slot
-      const aptStarting = validApts.find(apt => {
+      // Find ALL appointments that START at this slot
+      const aptsStarting = validApts.filter(apt => {
         const aptStart = timeToMinutes(apt.hora_inicio);
         return aptStart === min;
       });
 
-      // Find appointment that CONTINUES through this slot (started earlier, still running)
-      const continuingApt = validApts.find(apt => {
+      // Find ALL appointments that CONTINUE through this slot (started earlier, still running)
+      // IMPORTANT: Encaixes do NOT show continuation - they only appear in their starting slot
+      const continuingApts = validApts.filter(apt => {
         const aptStart = timeToMinutes(apt.hora_inicio);
         const aptEnd = timeToMinutes(apt.hora_fim);
+        // Encaixes don't show continuation
+        if (apt.is_encaixe) return false;
         return aptStart < min && aptEnd > min;
       });
 
-      // Check if slot is occupied (any appointment covers this time)
-      const isOccupied = !!aptStarting || !!continuingApt;
+      // Check if slot is occupied by non-encaixe appointments only (for free slot logic)
+      const hasRegularAppointment = aptsStarting.some(apt => !apt.is_encaixe) || continuingApts.length > 0;
+      const isOccupied = hasRegularAppointment;
 
       // Calculate free time until next appointment or end of day
       let freeUntil: string | undefined;
       let availableMinutes: number | undefined;
       
       if (!isOccupied && isWithinWork) {
-        // Find next appointment or end of work hours
+        // Find next regular (non-encaixe) appointment or end of work hours
         let endOfFree = dayEnd;
         
         for (const apt of validApts) {
+          // Only consider non-encaixe appointments for blocking
+          if (apt.is_encaixe) continue;
           const aptStart = timeToMinutes(apt.hora_inicio);
           if (aptStart > min && aptStart < endOfFree) {
             endOfFree = aptStart;
@@ -197,8 +202,8 @@ export function AgendaTimeGrid({
         time,
         minutes: min,
         isWithinWorkHours: isWithinWork,
-        appointment: aptStarting,
-        continuingAppointment: continuingApt,
+        appointments: aptsStarting,
+        continuingAppointments: continuingApts,
         isOccupied,
         isFree: !isOccupied && isWithinWork,
         freeUntil,
@@ -231,68 +236,86 @@ export function AgendaTimeGrid({
   // Helper to check if this is a "full hour" row (for visual emphasis)
   const isFullHour = (minutes: number) => minutes % 60 === 0;
 
+  // Calculate grid columns based on max simultaneous appointments
+  const getGridCols = (count: number) => {
+    if (count <= 1) return 'grid-cols-1';
+    if (count === 2) return 'grid-cols-2';
+    return 'grid-cols-3';
+  };
+
   return (
     <div className="border rounded-lg overflow-hidden">
-      {rows.map((row) => (
-        <div
-          key={row.time}
-          className={cn(
-            'flex border-b last:border-b-0 min-h-[44px]',
-            !row.isWithinWorkHours && 'bg-muted/30',
-            isFullHour(row.minutes) && 'border-t-2 border-t-muted'
-          )}
-        >
-          {/* Time column */}
-          <div className={cn(
-            'w-16 shrink-0 px-2 py-1 border-r bg-muted/50 flex items-center justify-end',
-            isFullHour(row.minutes) ? 'font-semibold text-foreground' : 'text-muted-foreground'
-          )}>
-            <span className="text-xs">
-              {row.time}
-            </span>
-          </div>
+      {rows.map((row) => {
+        const allAppointments = [...row.appointments, ...row.continuingAppointments];
+        const hasMultiple = allAppointments.length > 1 || row.appointments.length > 1;
+        
+        return (
+          <div
+            key={row.time}
+            className={cn(
+              'flex border-b last:border-b-0 min-h-[44px]',
+              !row.isWithinWorkHours && 'bg-muted/30',
+              isFullHour(row.minutes) && 'border-t-2 border-t-muted'
+            )}
+          >
+            {/* Time column */}
+            <div className={cn(
+              'w-16 shrink-0 px-2 py-1 border-r bg-muted/50 flex items-center justify-end',
+              isFullHour(row.minutes) ? 'font-semibold text-foreground' : 'text-muted-foreground'
+            )}>
+              <span className="text-xs">
+                {row.time}
+              </span>
+            </div>
 
-          {/* Content column */}
-          <div className="flex-1 p-0.5">
-            {row.appointment ? (
-              <AgendaAppointmentCard
-                appointment={row.appointment}
-                onClick={() => onAppointmentClick(row.appointment!)}
-              />
-            ) : row.continuingAppointment ? (
-              // Slot occupied by continuing appointment - show patient name and make clickable
-              <button
-                onClick={() => onAppointmentClick(row.continuingAppointment!)}
-                className={cn(
-                  "w-full h-full min-h-[40px] border-l-4 hover:opacity-80 transition-colors flex items-center px-2 cursor-pointer",
-                  row.continuingAppointment.is_encaixe 
-                    ? "bg-amber-50/80 border-l-amber-400 hover:bg-amber-100" 
-                    : "bg-blue-50/80 border-l-blue-400 hover:bg-blue-100"
-                )}
-              >
-                <span className={cn(
-                  "text-xs font-medium truncate",
-                  row.continuingAppointment.is_encaixe ? "text-amber-600" : "text-blue-600"
+            {/* Content column */}
+            <div className="flex-1 p-0.5">
+              {/* Has appointments starting at this slot */}
+              {row.appointments.length > 0 ? (
+                <div className={cn(
+                  'grid gap-0.5',
+                  getGridCols(row.appointments.length)
                 )}>
-                  ↑ {row.continuingAppointment.paciente_nome?.split(' ')[0] || 'Ocupado'}
-                  {row.continuingAppointment.is_encaixe && ' (E)'}
-                </span>
-              </button>
-            ) : row.isOccupied ? (
-              // Fallback for any other occupied state
-              <div className="h-full min-h-[40px] bg-blue-50/80 border-l-4 border-l-blue-300" />
-            ) : row.isFree ? (
-              <button
-                onClick={() => onSlotClick(row.time, row.availableMinutes || 10, row.freeUntil || row.time)}
-                className="w-full h-full min-h-[40px] rounded border border-dashed border-emerald-300 bg-emerald-50/30 hover:bg-emerald-100 hover:border-emerald-400 transition-colors flex items-center justify-center gap-1 text-emerald-600"
-              >
-                <Plus className="h-3 w-3" />
-                <span className="text-xs font-medium">Livre</span>
-              </button>
-            ) : null}
+                  {row.appointments.map(apt => (
+                    <AgendaAppointmentCard
+                      key={apt.id}
+                      appointment={apt}
+                      onClick={() => onAppointmentClick(apt)}
+                      compact={row.appointments.length > 1}
+                    />
+                  ))}
+                </div>
+              ) : row.continuingAppointments.length > 0 ? (
+                // Slots with continuing appointments (non-encaixe only)
+                <div className={cn(
+                  'grid gap-0.5',
+                  getGridCols(row.continuingAppointments.length)
+                )}>
+                  {row.continuingAppointments.map(apt => (
+                    <button
+                      key={apt.id}
+                      onClick={() => onAppointmentClick(apt)}
+                      className="w-full h-full min-h-[40px] border-l-4 hover:opacity-80 transition-colors flex items-center px-2 cursor-pointer bg-blue-50/80 border-l-blue-400 hover:bg-blue-100"
+                    >
+                      <span className="text-xs font-medium truncate text-blue-600">
+                        ↑ {apt.paciente_nome?.split(' ')[0] || 'Ocupado'}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : row.isFree ? (
+                <button
+                  onClick={() => onSlotClick(row.time, row.availableMinutes || 10, row.freeUntil || row.time)}
+                  className="w-full h-full min-h-[40px] rounded border border-dashed border-emerald-300 bg-emerald-50/30 hover:bg-emerald-100 hover:border-emerald-400 transition-colors flex items-center justify-center gap-1 text-emerald-600"
+                >
+                  <Plus className="h-3 w-3" />
+                  <span className="text-xs font-medium">Livre</span>
+                </button>
+              ) : null}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
