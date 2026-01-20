@@ -163,7 +163,21 @@ Deno.serve(async (req) => {
         return !hasConflict(slot, appointments || [])
       })
 
-      const uniqueSlots = removeDuplicateSlots(availableSlots)
+      // Filtrar horários passados se a data for hoje (timezone Brasil)
+      const now = new Date()
+      const brasilOffset = -3 * 60 // minutos
+      const utcMinutes = now.getUTCHours() * 60 + now.getUTCMinutes()
+      const brasilMinutes = utcMinutes + brasilOffset + (24 * 60)
+      const currentMinutesBrasil = brasilMinutes % (24 * 60)
+      
+      const brasilDate = new Date(now.getTime() + brasilOffset * 60 * 1000)
+      const todayBrasil = brasilDate.toISOString().split('T')[0]
+      
+      const filteredByTime = (data === todayBrasil) 
+        ? availableSlots.filter(slot => timeToMinutes(slot.hora_inicio) > currentMinutesBrasil)
+        : availableSlots
+
+      const uniqueSlots = removeDuplicateSlots(filteredByTime)
       uniqueSlots.sort((a, b) => a.hora_inicio.localeCompare(b.hora_inicio))
 
       if (uniqueSlots.length > 0) {
