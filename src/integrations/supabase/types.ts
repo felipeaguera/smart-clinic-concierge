@@ -139,6 +139,7 @@ export type Database = {
           categoria: string
           created_at: string
           currency: string
+          doctor_id: string | null
           duracao_minutos: number
           has_price: boolean
           id: string
@@ -152,6 +153,7 @@ export type Database = {
           categoria: string
           created_at?: string
           currency?: string
+          doctor_id?: string | null
           duracao_minutos: number
           has_price?: boolean
           id?: string
@@ -165,6 +167,7 @@ export type Database = {
           categoria?: string
           created_at?: string
           currency?: string
+          doctor_id?: string | null
           duracao_minutos?: number
           has_price?: boolean
           id?: string
@@ -173,7 +176,15 @@ export type Database = {
           preparo?: string | null
           price_private?: number | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "exam_types_doctor_id_fkey"
+            columns: ["doctor_id"]
+            isOneToOne: false
+            referencedRelation: "doctors"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       schedule_exceptions: {
         Row: {
