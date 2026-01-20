@@ -184,34 +184,15 @@ export default function DatasExtras() {
     },
   });
 
-  // Delete mutation - check for existing appointments first
+  // Delete mutation - agendamentos existentes permanecem intactos
   const deleteMutation = useMutation({
     mutationFn: async (opening: ScheduleOpening) => {
-      // Check if there are any appointments for this doctor on this date
-      const { data: appointments, error: checkError } = await supabase
-        .from('appointments')
-        .select('id, paciente_nome')
-        .eq('doctor_id', opening.doctor_id)
-        .eq('data', opening.data)
-        .neq('status', 'cancelado');
-      
-      if (checkError) throw checkError;
-      
-      if (appointments && appointments.length > 0) {
-        const patientNames = appointments
-          .map(a => a.paciente_nome || 'Paciente sem nome')
-          .slice(0, 3)
-          .join(', ');
-        const moreText = appointments.length > 3 ? ` e mais ${appointments.length - 3}` : '';
-        throw new Error(`Não é possível excluir esta agenda porque existem ${appointments.length} paciente(s) marcado(s) para este dia: ${patientNames}${moreText}`);
-      }
-      
       const { error } = await supabase.from('schedule_openings').delete().eq('id', opening.id);
       if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['schedule_openings'] });
-      toast({ title: 'Sucesso', description: 'Data extra removida!' });
+      toast({ title: 'Sucesso', description: 'Data extra removida! Os agendamentos existentes foram mantidos.' });
     },
     onError: (error: Error) => {
       toast({
