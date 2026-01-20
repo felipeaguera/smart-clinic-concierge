@@ -50,6 +50,7 @@ interface ExamType {
   nome: string;
   categoria: string;
   duracao_minutos: number;
+  doctor_id: string | null;
 }
 
 interface Appointment {
@@ -148,7 +149,7 @@ export default function Agendamentos() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('exam_types')
-        .select('id, nome, categoria, duracao_minutos')
+        .select('id, nome, categoria, duracao_minutos, doctor_id')
         .eq('ativo', true)
         .order('nome');
       if (error) throw error;

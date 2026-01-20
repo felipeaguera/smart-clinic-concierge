@@ -25,6 +25,7 @@ interface ExamType {
   nome: string;
   categoria: string;
   duracao_minutos: number;
+  doctor_id: string | null;
 }
 
 interface DoctorRule {
@@ -85,11 +86,20 @@ export function BuscarProximaVagaCard({
     );
   }, [doctors, doctorRules, tipoAtendimento]);
 
-  // Filtra exames pelo tipo de atendimento
+  // Filtra exames pelo tipo de atendimento e médico selecionado (para consultas)
   const filteredExamTypes = useMemo(() => {
     const categoria = tipoAtendimento === 'consulta' ? 'consulta' : 'ultrassom';
-    return examTypes.filter((exam) => exam.categoria === categoria);
-  }, [examTypes, tipoAtendimento]);
+    return examTypes.filter((exam) => {
+      const categoryMatch = exam.categoria === categoria;
+      
+      // Para consultas, filtra pelo médico se um foi selecionado
+      if (tipoAtendimento === 'consulta' && selectedDoctorId !== 'todos') {
+        return categoryMatch && exam.doctor_id === selectedDoctorId;
+      }
+      
+      return categoryMatch;
+    });
+  }, [examTypes, tipoAtendimento, selectedDoctorId]);
 
   const selectedExam = filteredExamTypes.find((e) => e.id === selectedExamId);
 

@@ -102,6 +102,25 @@ Deno.serve(async (req) => {
       )
     }
 
+    // VALIDAÇÃO: Se for consulta, verificar vínculo médico-serviço
+    if (examType.categoria === 'consulta') {
+      if (!examType.doctor_id) {
+        console.error('Consulta sem médico vinculado:', exam_type_id)
+        return new Response(
+          JSON.stringify({ error: 'Esta consulta não está vinculada a nenhum médico' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+      
+      if (examType.doctor_id !== doctor_id) {
+        console.error('Consulta não pertence ao médico:', { exam_doctor_id: examType.doctor_id, requested_doctor_id: doctor_id })
+        return new Response(
+          JSON.stringify({ error: 'Esta consulta não pertence ao médico selecionado' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+    }
+
     // Verificar se o médico existe e está ativo
     const { data: doctor, error: doctorError } = await supabase
       .from('doctors')

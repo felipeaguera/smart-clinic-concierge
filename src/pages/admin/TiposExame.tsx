@@ -13,7 +13,6 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog';
 import {
   Select,
@@ -30,7 +29,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { Plus, Pencil, Trash2, Loader2, Stethoscope, Activity, FlaskConical, Search } from 'lucide-react';
 import {
@@ -45,6 +44,12 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 
+interface Doctor {
+  id: string;
+  nome: string;
+  ativo: boolean;
+}
+
 interface ExamType {
   id: string;
   nome: string;
@@ -56,6 +61,7 @@ interface ExamType {
   has_price: boolean;
   price_private: number | null;
   currency: string;
+  doctor_id: string | null;
   created_at: string;
 }
 
@@ -76,10 +82,26 @@ export default function TiposExame() {
   const [ativo, setAtivo] = useState(true);
   const [hasPrice, setHasPrice] = useState(false);
   const [pricePrivate, setPricePrivate] = useState('');
+  const [doctorId, setDoctorId] = useState<string>('');
   const [activeTab, setActiveTab] = useState('consulta');
   const [searchTerm, setSearchTerm] = useState('');
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  // Buscar médicos para o dropdown
+  const { data: doctors } = useQuery({
+    queryKey: ['doctors'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('doctors')
+        .select('id, nome, ativo')
+        .order('nome');
+      if (error) throw error;
+      return data as Doctor[];
+    },
+  });
+
+  const activeDoctors = doctors?.filter(d => d.ativo) || [];
 
   const { data: examTypes, isLoading } = useQuery({
     queryKey: ['exam_types'],
@@ -116,6 +138,7 @@ export default function TiposExame() {
       orientacoes: string | null;
       has_price: boolean;
       price_private: number | null;
+      doctor_id: string | null;
       id?: string;
     }) => {
       const payload = {
@@ -127,6 +150,7 @@ export default function TiposExame() {
         orientacoes: data.orientacoes || null,
         has_price: data.has_price,
         price_private: data.has_price ? data.price_private : null,
+        doctor_id: data.doctor_id || null,
       };
 
       if (data.id) {
@@ -188,6 +212,7 @@ export default function TiposExame() {
     setAtivo(true);
     setHasPrice(false);
     setPricePrivate('');
+    setDoctorId('');
   };
 
   const handleEdit = (exam: ExamType) => {
@@ -200,6 +225,7 @@ export default function TiposExame() {
     setAtivo(exam.ativo);
     setHasPrice(exam.has_price);
     setPricePrivate(exam.price_private !== null ? String(exam.price_private) : '');
+    setDoctorId(exam.doctor_id || '');
     setIsOpen(true);
   };
 
@@ -213,6 +239,12 @@ export default function TiposExame() {
     e.preventDefault();
     if (!nome.trim() || !categoria) {
       toast({ title: 'Erro', description: 'Preencha os campos obrigatórios', variant: 'destructive' });
+      return;
+    }
+
+    // Validação: consulta DEVE ter médico vinculado
+    if (categoria === 'consulta' && !doctorId) {
+      toast({ title: 'Erro', description: 'Consultas devem estar vinculadas a um médico', variant: 'destructive' });
       return;
     }
 
@@ -253,6 +285,7 @@ export default function TiposExame() {
       orientacoes: orientacoes.trim() || null,
       has_price: hasPrice,
       price_private: priceValue,
+      doctor_id: categoria === 'consulta' ? doctorId : null,
       id: editingExam?.id,
     });
   };
@@ -260,14 +293,22 @@ export default function TiposExame() {
   const getCategoriaLabel = (value: string) =>
     CATEGORIAS.find((c) => c.value === value)?.label || value;
 
-  const showDuracao = categoria !== 'laboratorio';
+  const getDoctorName = (doctorId: string | null) => {
+    if (!doctorId) return '-';
+    const doctor = doctors?.find(d => d.id === doctorId);
+    return doctor?.nome || '-';
+  };
 
-  const renderExamTable = (exams: ExamType[], showDuration: boolean) => (
+  const showDuracao = categoria !== 'laboratorio';
+  const showDoctorSelect = categoria === 'consulta';
+
+  const renderExamTable = (exams: ExamType[], showDuration: boolean, showDoctor: boolean) => (
     <div className="rounded-lg border overflow-hidden">
       <Table>
         <TableHeader>
           <TableRow className="bg-muted/50">
             <TableHead>Nome</TableHead>
+            {showDoctor && <TableHead>Médico</TableHead>}
             {showDuration && <TableHead>Duração</TableHead>}
             <TableHead>Status</TableHead>
             <TableHead className="w-[80px]">Ações</TableHead>
@@ -276,7 +317,7 @@ export default function TiposExame() {
         <TableBody>
           {exams.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={showDuration ? 4 : 3} className="text-center text-muted-foreground py-8">
+              <TableCell colSpan={showDoctor ? (showDuration ? 5 : 4) : (showDuration ? 4 : 3)} className="text-center text-muted-foreground py-8">
                 Nenhum item cadastrado
               </TableCell>
             </TableRow>
@@ -284,6 +325,7 @@ export default function TiposExame() {
             exams.map((exam) => (
               <TableRow key={exam.id}>
                 <TableCell className="font-medium">{exam.nome}</TableCell>
+                {showDoctor && <TableCell className="text-muted-foreground">{getDoctorName(exam.doctor_id)}</TableCell>}
                 {showDuration && <TableCell>{exam.duracao_minutos} min</TableCell>}
                 <TableCell>
                   <Switch
@@ -378,7 +420,8 @@ export default function TiposExame() {
                   </div>
                   {renderExamTable(
                     examsByCategory[cat.value as keyof typeof examsByCategory] || [],
-                    cat.value !== 'laboratorio'
+                    cat.value !== 'laboratorio',
+                    cat.value === 'consulta'
                   )}
                 </TabsContent>
               ))}
@@ -394,6 +437,28 @@ export default function TiposExame() {
             <DialogTitle>{editingExam ? 'Editar' : 'Novo'} {getCategoriaLabel(categoria)}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Médico (obrigatório para consultas) */}
+            {showDoctorSelect && (
+              <div className="space-y-2">
+                <Label htmlFor="doctor">Médico *</Label>
+                <Select value={doctorId} onValueChange={setDoctorId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione o médico" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {activeDoctors.map((doctor) => (
+                      <SelectItem key={doctor.id} value={doctor.id}>
+                        {doctor.nome}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Consultas são serviços específicos de cada médico
+                </p>
+              </div>
+            )}
+
             {/* Nome */}
             <div className="space-y-2">
               <Label htmlFor="nome">Nome</Label>
@@ -409,7 +474,13 @@ export default function TiposExame() {
             {editingExam && (
               <div className="space-y-2">
                 <Label htmlFor="categoria">Categoria</Label>
-                <Select value={categoria} onValueChange={setCategoria}>
+                <Select value={categoria} onValueChange={(val) => {
+                  setCategoria(val);
+                  // Limpar doctor_id se mudar de consulta para outra categoria
+                  if (val !== 'consulta') {
+                    setDoctorId('');
+                  }
+                }}>
                   <SelectTrigger>
                     <SelectValue placeholder="Selecione a categoria" />
                   </SelectTrigger>
