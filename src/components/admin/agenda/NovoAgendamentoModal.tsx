@@ -27,6 +27,7 @@ interface ExamType {
   nome: string;
   categoria: string;
   duracao_minutos: number;
+  doctor_id: string | null;
 }
 
 interface Doctor {
@@ -85,18 +86,23 @@ export function NovoAgendamentoModal({
 
   const selectedExam = examTypes.find((e) => e.id === examTypeId);
 
-  // Filtra exames pela categoria compatível E que cabem no tempo restante
+  // Filtra exames pela categoria compatível, pelo médico (se consulta) E que cabem no tempo restante
   const filteredExamTypes = examTypes.filter((exam) => {
     const categoryMatch = tipoAtendimento === 'consulta' 
       ? exam.categoria === 'consulta' 
       : exam.categoria === 'ultrassom';
+    
+    // Para consultas, o exame deve estar vinculado ao médico selecionado
+    const doctorMatch = tipoAtendimento === 'consulta'
+      ? exam.doctor_id === doctor.id
+      : true; // Ultrassom ainda é global (doctor_id = null ou qualquer)
     
     // Calcula quanto tempo resta a partir do horário escolhido
     const chosenMinutes = timeToMinutes(chosenTime);
     const slotEndMinutes = timeToMinutes(slotEndTime);
     const remainingMinutes = slotEndMinutes - chosenMinutes;
     
-    return categoryMatch && exam.duracao_minutos <= remainingMinutes;
+    return categoryMatch && doctorMatch && exam.duracao_minutos <= remainingMinutes;
   });
 
   // Gera opções de horário dentro do slot livre (intervalos de 15 min)

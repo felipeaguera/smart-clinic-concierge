@@ -28,6 +28,7 @@ interface ExamType {
   nome: string;
   categoria: string;
   duracao_minutos: number;
+  doctor_id: string | null;
 }
 
 interface Doctor {
@@ -80,11 +81,18 @@ export function EncaixeModal({
 
   const selectedExam = examTypes.find((e) => e.id === examTypeId);
 
-  // Filtra exames pela categoria compatível
+  // Filtra exames pela categoria compatível e pelo médico (se consulta)
   const filteredExamTypes = examTypes.filter((exam) => {
-    return tipoAtendimento === 'consulta' 
+    const categoryMatch = tipoAtendimento === 'consulta' 
       ? exam.categoria === 'consulta' 
       : exam.categoria === 'ultrassom';
+    
+    // Para consultas, o exame deve estar vinculado ao médico selecionado
+    const doctorMatch = tipoAtendimento === 'consulta'
+      ? exam.doctor_id === doctor.id
+      : true;
+    
+    return categoryMatch && doctorMatch;
   });
 
   // Gera opções de horário das 06:00 às 22:00 em intervalos de 10 min
