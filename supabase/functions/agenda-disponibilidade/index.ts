@@ -242,8 +242,26 @@ Deno.serve(async (req) => {
       return !hasConflict(slot, appointments || [])
     })
 
+    // 7) Filtrar horários passados se a data for hoje (timezone Brasil)
+    const now = new Date()
+    // Converter para horário de Brasília (UTC-3)
+    const brasilOffset = -3 * 60 // minutos
+    const utcMinutes = now.getUTCHours() * 60 + now.getUTCMinutes()
+    const brasilMinutes = utcMinutes + brasilOffset + (24 * 60) // +24h para evitar negativos
+    const currentMinutesBrasil = brasilMinutes % (24 * 60)
+    
+    // Verificar se a data requisitada é hoje (Brasil)
+    const brasilDate = new Date(now.getTime() + brasilOffset * 60 * 1000)
+    const todayBrasil = brasilDate.toISOString().split('T')[0]
+    
+    const filteredByTime = (data === todayBrasil) 
+      ? availableSlots.filter(slot => timeToMinutes(slot.hora_inicio) > currentMinutesBrasil)
+      : availableSlots
+
+    console.log(`Filtro de horários passados: hoje=${todayBrasil}, data=${data}, horaBrasil=${minutesToTime(currentMinutesBrasil)}, slots antes=${availableSlots.length}, depois=${filteredByTime.length}`)
+
     // Remover duplicatas e ordenar
-    const uniqueSlots = removeDuplicateSlots(availableSlots)
+    const uniqueSlots = removeDuplicateSlots(filteredByTime)
     uniqueSlots.sort((a, b) => a.hora_inicio.localeCompare(b.hora_inicio))
 
     console.log('Slots disponíveis:', uniqueSlots)
