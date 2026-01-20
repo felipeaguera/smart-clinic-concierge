@@ -170,12 +170,17 @@ PASSO 4: PARA ULTRASSONS
 7. Chamar reservar_horario com os dados escolhidos + paciente_nome
 8. Após sucesso: informar data/horário + preparo + orientações
 
-PASSO 5: PARA CONSULTAS
-1. Se paciente especificou médico → usar buscar_disponibilidade direto
-2. Se não especificou → perguntar: "Temos consulta com Dr. X (especialidade) e Dr. Y (especialidade). Qual prefere?"
-3. Se paciente pediu horário específico → verificar disponibilidade desse horário
-4. Após escolha, buscar disponibilidade do médico escolhido
-5. Se não houver horários, usar buscar_proxima_vaga e oferecer a primeira data disponível
+PASSO 5: PARA CONSULTAS (REGRA DE VINCULAÇÃO)
+⚠️ REGRA CRÍTICA: Cada consulta está VINCULADA a um médico específico via doctor_id.
+1. Verificar se a consulta tem doctor_id vinculado (marcado como [EXCLUSIVO: Dr. Nome] no cadastro)
+2. Se SIM → usar buscar_disponibilidade com o doctor_id vinculado AUTOMATICAMENTE (NÃO perguntar ao paciente qual médico)
+3. Se NÃO houver vinculação → perguntar ao paciente qual médico prefere
+4. Se paciente pediu horário específico → verificar disponibilidade desse horário
+5. Após escolha, buscar disponibilidade do médico correto
+6. Se não houver horários, usar buscar_proxima_vaga e oferecer a primeira data disponível
+
+Exemplo: Se "Consulta Cardiologia" tem [EXCLUSIVO: Dr. Klauber], ao agendar essa consulta,
+usar automaticamente o doctor_id do Dr. Klauber SEM perguntar ao paciente.
 
 DATAS:
 - Usar DATA ATUAL do contexto como referência fixa
@@ -559,7 +564,7 @@ serve(async (req) => {
       supabase.from("doctors").select("id, nome, especialidade").eq("ativo", true),
       supabase
         .from("exam_types")
-        .select("id, nome, categoria, duracao_minutos, preparo, orientacoes, has_price, price_private, currency")
+        .select("id, nome, categoria, duracao_minutos, preparo, orientacoes, has_price, price_private, currency, doctor_id")
         .eq("ativo", true),
     ]);
 
@@ -682,10 +687,20 @@ MÉDICOS:
 ${doctors.map((d) => `• ${d.nome} (${d.especialidade}) [ID: ${d.id}]`).join("\n")}
 
 EXAMES COM PREÇO CADASTRADO:
-${examsWithPrice.map((e) => `• "${e.nome}" (${e.categoria}): ${formatPrice(e)} [ID: ${e.id}]`).join("\n") || "(nenhum)"}
+${examsWithPrice.map((e) => {
+  const doctorBinding = e.categoria === 'consulta' && e.doctor_id 
+    ? ` [EXCLUSIVO: ${doctors.find(d => d.id === e.doctor_id)?.nome || 'médico não encontrado'}]` 
+    : '';
+  return `• "${e.nome}" (${e.categoria}): ${formatPrice(e)}${doctorBinding} [ID: ${e.id}]`;
+}).join("\n") || "(nenhum)"}
 
 EXAMES SEM PREÇO (encaminhar para humano):
-${examsWithoutPrice.map((e) => `• "${e.nome}" (${e.categoria}) [ID: ${e.id}]`).join("\n") || "(nenhum)"}
+${examsWithoutPrice.map((e) => {
+  const doctorBinding = e.categoria === 'consulta' && e.doctor_id 
+    ? ` [EXCLUSIVO: ${doctors.find(d => d.id === e.doctor_id)?.nome || 'médico não encontrado'}]` 
+    : '';
+  return `• "${e.nome}" (${e.categoria})${doctorBinding} [ID: ${e.id}]`;
+}).join("\n") || "(nenhum)"}
 
 ${
   foundExams.length > 0
