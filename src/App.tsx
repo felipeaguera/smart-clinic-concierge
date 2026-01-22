@@ -8,10 +8,8 @@ import { ProtectedRoute } from "@/components/admin/ProtectedRoute";
 import Login from "./pages/Login";
 import Atendimento from "./pages/Atendimento";
 import Medicos from "./pages/admin/Medicos";
+import MedicoPerfil from "./pages/admin/MedicoPerfil";
 import TiposExame from "./pages/admin/TiposExame";
-import RegrasAtendimento from "./pages/admin/RegrasAtendimento";
-import ExcecoesAgenda from "./pages/admin/ExcecoesAgenda";
-import DatasExtras from "./pages/admin/DatasExtras";
 import Agendamentos from "./pages/admin/Agendamentos";
 import NotFound from "./pages/NotFound";
 
@@ -36,6 +34,14 @@ const App = () => (
               }
             />
             <Route
+              path="/admin/medicos/:id"
+              element={
+                <ProtectedRoute>
+                  <MedicoPerfil />
+                </ProtectedRoute>
+              }
+            />
+            <Route
               path="/admin/exames"
               element={
                 <ProtectedRoute>
@@ -43,30 +49,10 @@ const App = () => (
                 </ProtectedRoute>
               }
             />
-            <Route
-              path="/admin/regras"
-              element={
-                <ProtectedRoute>
-                  <RegrasAtendimento />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/admin/excecoes"
-              element={
-                <ProtectedRoute>
-                  <ExcecoesAgenda />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/admin/datas-extras"
-              element={
-                <ProtectedRoute>
-                  <DatasExtras />
-                </ProtectedRoute>
-              }
-            />
+            {/* Redirects de rotas antigas */}
+            <Route path="/admin/regras" element={<Navigate to="/admin/medicos" replace />} />
+            <Route path="/admin/excecoes" element={<Navigate to="/admin/medicos" replace />} />
+            <Route path="/admin/datas-extras" element={<Navigate to="/admin/medicos" replace />} />
             <Route
               path="/admin/agendamentos"
               element={

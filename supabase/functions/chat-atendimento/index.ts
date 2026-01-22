@@ -621,7 +621,7 @@ serve(async (req) => {
 
     // Fetch available data for context
     const [doctorsResult, examTypesResult] = await Promise.all([
-      supabase.from("doctors").select("id, nome, especialidade").eq("ativo", true),
+      supabase.from("doctors").select("id, nome, especialidade, prompt_ia").eq("ativo", true),
       supabase
         .from("exam_types")
         .select("id, nome, categoria, duracao_minutos, preparo, orientacoes, has_price, price_private, currency, doctor_id")
@@ -744,7 +744,13 @@ DATA ATUAL: ${currentDate} (${currentWeekday}, ${formattedDate})
 HORA ATUAL: ${currentTime} (horário de Brasília)
 
 MÉDICOS:
-${doctors.map((d) => `• ${d.nome} (${d.especialidade}) [ID: ${d.id}]`).join("\n")}
+${doctors.map((d: any) => {
+  let info = `• ${d.nome} (${d.especialidade}) [ID: ${d.id}]`;
+  if (d.prompt_ia) {
+    info += `\n  📋 INSTRUÇÕES ESPECÍFICAS: ${d.prompt_ia}`;
+  }
+  return info;
+}).join("\n")}
 
 EXAMES COM PREÇO CADASTRADO:
 ${examsWithPrice.map((e) => {

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { AdminLayout } from '@/components/admin/AdminLayout';
@@ -45,6 +46,7 @@ interface Doctor {
 }
 
 export default function Medicos() {
+  const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(false);
   const [editingDoctor, setEditingDoctor] = useState<Doctor | null>(null);
   const [nome, setNome] = useState('');
@@ -53,6 +55,10 @@ export default function Medicos() {
   const [search, setSearch] = useState('');
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  const handleRowClick = (doctor: Doctor) => {
+    navigate(`/admin/medicos/${doctor.id}`);
+  };
 
   const { data: doctors, isLoading } = useQuery({
     queryKey: ['doctors'],
@@ -247,9 +253,12 @@ export default function Medicos() {
                     </TableRow>
                   ) : (
                     filteredDoctors?.map((doctor) => (
-                      <TableRow key={doctor.id}>
+                      <TableRow 
+                        key={doctor.id} 
+                        className="cursor-pointer hover:bg-muted/50"
+                        onClick={() => handleRowClick(doctor)}
+                      >
                         <TableCell className="font-medium">{doctor.nome}</TableCell>
-                        <TableCell>{doctor.especialidade}</TableCell>
                         <TableCell>
                           <Switch
                             checked={doctor.ativo}

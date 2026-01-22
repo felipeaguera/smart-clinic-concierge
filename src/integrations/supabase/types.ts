@@ -116,6 +116,7 @@ export type Database = {
           especialidade: string
           id: string
           nome: string
+          prompt_ia: string | null
         }
         Insert: {
           ativo?: boolean
@@ -123,6 +124,7 @@ export type Database = {
           especialidade: string
           id?: string
           nome: string
+          prompt_ia?: string | null
         }
         Update: {
           ativo?: boolean
@@ -130,6 +132,7 @@ export type Database = {
           especialidade?: string
           id?: string
           nome?: string
+          prompt_ia?: string | null
         }
         Relationships: []
       }
