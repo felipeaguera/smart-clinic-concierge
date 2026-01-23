@@ -66,7 +66,6 @@ interface ExamType {
 }
 
 const CATEGORIAS = [
-  { value: 'consulta', label: 'Consultas', icon: Stethoscope },
   { value: 'ultrassom', label: 'Ultrassom', icon: Activity },
   { value: 'laboratorio', label: 'Laboratório', icon: FlaskConical },
 ];
@@ -83,7 +82,7 @@ export default function TiposExame() {
   const [hasPrice, setHasPrice] = useState(false);
   const [pricePrivate, setPricePrivate] = useState('');
   const [doctorId, setDoctorId] = useState<string>('');
-  const [activeTab, setActiveTab] = useState('consulta');
+  const [activeTab, setActiveTab] = useState('ultrassom');
   const [searchTerm, setSearchTerm] = useState('');
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -115,14 +114,13 @@ export default function TiposExame() {
     },
   });
 
-  // Agrupa exames por categoria com filtro de busca
+  // Agrupa exames por categoria com filtro de busca (apenas ultrassom e laboratório)
   const examsByCategory = useMemo(() => {
-    if (!examTypes) return { consulta: [], ultrassom: [], laboratorio: [] };
+    if (!examTypes) return { ultrassom: [], laboratorio: [] };
     const filtered = examTypes.filter((e) =>
       e.nome.toLowerCase().includes(searchTerm.toLowerCase())
     );
     return {
-      consulta: filtered.filter((e) => e.categoria === 'consulta'),
       ultrassom: filtered.filter((e) => e.categoria === 'ultrassom'),
       laboratorio: filtered.filter((e) => e.categoria === 'laboratorio'),
     };
@@ -375,7 +373,7 @@ export default function TiposExame() {
   );
 
   return (
-    <AdminLayout title="Tipos de Exame">
+    <AdminLayout title="Serviços">
       <Card className="glass-card">
         <CardContent className="pt-6">
           {isLoading ? (
