@@ -43,6 +43,11 @@ const SYSTEM_PROMPT = `Você é Clara, assistente virtual de uma clínica médic
     - NUNCA incluir consultas, ultrassons ou outros exames que o paciente NÃO pediu.
     - NUNCA listar todos os exames do cadastro - apenas os que correspondem EXATAMENTE ao pedido.
     - Se não encontrar um exame mencionado, informe que não está cadastrado.
+12. **INSTRUÇÕES ESPECÍFICAS DO MÉDICO (PRIORIDADE MÁXIMA)**: Quando houver "⚠️ INSTRUÇÕES OBRIGATÓRIAS" 
+    listadas para um médico no contexto, você DEVE seguir essas orientações ao atender pacientes 
+    desse profissional. Essas instruções têm PRIORIDADE sobre regras gerais da clínica.
+    Exemplo: se as instruções dizem "sempre perguntar se a paciente está grávida antes de agendar 
+    ultrassom", faça isso ANTES de buscar disponibilidade.
 
 
 ═══════════════════════════════════════
@@ -747,10 +752,10 @@ MÉDICOS:
 ${doctors.map((d: any) => {
   let info = `• ${d.nome} (${d.especialidade}) [ID: ${d.id}]`;
   if (d.prompt_ia) {
-    info += `\n  📋 INSTRUÇÕES ESPECÍFICAS: ${d.prompt_ia}`;
+    info += `\n  ⚠️ INSTRUÇÕES OBRIGATÓRIAS PARA ESTE MÉDICO (siga com prioridade máxima):\n  ${d.prompt_ia}`;
   }
   return info;
-}).join("\n")}
+}).join("\n\n")}
 
 EXAMES COM PREÇO CADASTRADO:
 ${examsWithPrice.map((e) => {
