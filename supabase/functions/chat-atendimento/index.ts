@@ -90,14 +90,14 @@ const SYSTEM_PROMPT = `Você é Clara, assistente virtual de uma clínica médic
     B) MORFOLÓGICO 1º TRIMESTRE (sem pré-eclâmpsia):
     - Detectar: nome contém "morfológico" E contém "1" E NÃO contém "pré-eclâmpsia"
     - Oferecer: Morfológico 1º tri com Rastreamento de Pré-eclâmpsia
-    - Frase: "A pré-eclâmpsia é uma das principais complicações da gravidez. Incluindo o rastreamento, você descobre cedo se há risco e pode se cuidar melhor. Quer incluir?"
+    - Frase: "No primeiro trimestre, além do morfológico, é possível incluir o rastreamento de pré-eclâmpsia. A pré-eclâmpsia está relacionada à pressão alta na gestação e, quando identificada precocemente, permite um acompanhamento mais cuidadoso e medidas preventivas. Você gostaria de incluir esse rastreamento no exame?”"
     - Se tiver preços: mostrar valor base vs valor completo
 
     C) MORFOLÓGICO 2º TRIMESTRE:
     - Detectar: nome contém "morfológico" E contém "2"
     - Oferecer: Doppler + Transvaginal (complementos separados)
-    - Frase Doppler: "O Doppler complementa o morfológico avaliando a circulação — muitas mães optam por esse combo. Quer incluir?"
-    - Frase Transvaginal: "O ultrassom transvaginal mede o colo do útero e ajuda a prevenir parto prematuro. Posso agendar junto?"
+    - Frase Doppler: "Além da avaliação anatômica do bebê, é possível incluir o Doppler, que analisa a circulação da placenta e do bebê. Esse complemento pode trazer informações importantes sobre o bem-estar fetal ao longo da gestação. Gostaria de incluir o Doppler junto ao morfológico?"
+    - Frase Transvaginal: "Outro complemento que pode ser realizado é o ultrassom transvaginal, que permite medir o colo do útero. Essa medida ajuda a identificar precocemente situações associadas ao risco de parto prematuro e orientar o acompanhamento da gestação. Você gostaria de incluir esse exame junto ao morfológico?"
 
     FLUXO:
     1. Paciente solicita exame base → IA detecta match com regra de upsell
@@ -502,11 +502,11 @@ function matchesExam(examName: string, searchTerm: string): boolean {
   }
 
   // Match por palavras-chave principais (precisa ter palavras significativas em comum)
-  const searchWords = normalizedSearch.split(" ").filter(w => w.length >= 3);
-  const examWords = normalizedExam.split(" ").filter(w => w.length >= 3);
-  
+  const searchWords = normalizedSearch.split(" ").filter((w) => w.length >= 3);
+  const examWords = normalizedExam.split(" ").filter((w) => w.length >= 3);
+
   // Para exames de lab com nomes compostos, precisa de match mais preciso
-  const significantMatches = searchWords.filter((sw) => 
+  const significantMatches = searchWords.filter((sw) =>
     examWords.some((ew) => {
       // Match exato da palavra
       if (ew === sw) return true;
@@ -517,7 +517,7 @@ function matchesExam(examName: string, searchTerm: string): boolean {
         return shorter.length >= longer.length * 0.8;
       }
       return false;
-    })
+    }),
   );
 
   // Precisa de pelo menos 1 palavra significativa em comum para nomes curtos
@@ -547,17 +547,14 @@ function matchesExam(examName: string, searchTerm: string): boolean {
 
 // Separa a mensagem em itens individuais (por vírgula, "e", quebra de linha, etc)
 function splitMessageIntoItems(message: string): string[] {
-  const normalized = message
-    .replace(/\n/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  
+  const normalized = message.replace(/\n/g, " ").replace(/\s+/g, " ").trim();
+
   // Separar por vírgulas, "e", ponto e vírgula, etc
   const items = normalized
     .split(/[,;]|\s+e\s+/)
-    .map(item => item.trim())
-    .filter(item => item.length > 0);
-  
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+
   return items;
 }
 
@@ -578,11 +575,11 @@ function extractMentionedItems(
 
   // Separar a mensagem em itens individuais para matching mais preciso
   const messageItems = splitMessageIntoItems(message);
-  
+
   // Para cada item mencionado na mensagem, buscar correspondência EXATA
   for (const item of messageItems) {
     let foundMatch = false;
-    
+
     for (const exam of examTypes) {
       if (matchesExam(exam.nome, item)) {
         if (!foundExams.find((e) => e.id === exam.id)) {
@@ -591,16 +588,34 @@ function extractMentionedItems(
         }
       }
     }
-    
+
     // Se não encontrou match para este item, adicionar aos não resolvidos
     if (!foundMatch && item.length > 3) {
       // Filtrar palavras comuns que não são nomes de exame
-      const stopWords = ["ola", "oi", "preciso", "quero", "gostaria", "fazer", "marcar", 
-                         "orcamento", "orçamento", "valor", "valores", "preco", "preço",
-                         "desses", "exames", "exame", "quanto", "custa", "custam"];
+      const stopWords = [
+        "ola",
+        "oi",
+        "preciso",
+        "quero",
+        "gostaria",
+        "fazer",
+        "marcar",
+        "orcamento",
+        "orçamento",
+        "valor",
+        "valores",
+        "preco",
+        "preço",
+        "desses",
+        "exames",
+        "exame",
+        "quanto",
+        "custa",
+        "custam",
+      ];
       const itemNormalized = normalizeText(item);
-      const isStopWord = stopWords.some(sw => itemNormalized === sw || itemNormalized.startsWith(sw + " "));
-      
+      const isStopWord = stopWords.some((sw) => itemNormalized === sw || itemNormalized.startsWith(sw + " "));
+
       if (!isStopWord && !unresolved.includes(item)) {
         unresolved.push(item);
       }
@@ -687,7 +702,9 @@ serve(async (req) => {
       supabase.from("doctors").select("id, nome, especialidade, prompt_ia").eq("ativo", true),
       supabase
         .from("exam_types")
-        .select("id, nome, categoria, duracao_minutos, preparo, orientacoes, has_price, price_private, currency, doctor_id")
+        .select(
+          "id, nome, categoria, duracao_minutos, preparo, orientacoes, has_price, price_private, currency, doctor_id",
+        )
         .eq("ativo", true),
     ]);
 
@@ -771,17 +788,17 @@ serve(async (req) => {
       hour12: false,
     });
     const parts = brasilFormatter.formatToParts(now);
-    const getPart = (type: string) => parts.find(p => p.type === type)?.value || "";
-    
+    const getPart = (type: string) => parts.find((p) => p.type === type)?.value || "";
+
     const brasilYear = getPart("year");
     const brasilMonth = getPart("month");
     const brasilDay = getPart("day");
     const brasilHour = parseInt(getPart("hour"), 10);
     const brasilMinute = parseInt(getPart("minute"), 10);
-    
+
     const currentDate = `${brasilYear}-${brasilMonth}-${brasilDay}`;
     const nowMinutesBrasil = brasilHour * 60 + brasilMinute;
-    
+
     const weekdays = [
       "domingo",
       "segunda-feira",
@@ -807,29 +824,41 @@ DATA ATUAL: ${currentDate} (${currentWeekday}, ${formattedDate})
 HORA ATUAL: ${currentTime} (horário de Brasília)
 
 MÉDICOS:
-${doctors.map((d: any) => {
-  let info = `• ${d.nome} (${d.especialidade}) [ID: ${d.id}]`;
-  if (d.prompt_ia) {
-    info += `\n  ⚠️ INSTRUÇÕES OBRIGATÓRIAS PARA ESTE MÉDICO (siga com prioridade máxima):\n  ${d.prompt_ia}`;
-  }
-  return info;
-}).join("\n\n")}
+${doctors
+  .map((d: any) => {
+    let info = `• ${d.nome} (${d.especialidade}) [ID: ${d.id}]`;
+    if (d.prompt_ia) {
+      info += `\n  ⚠️ INSTRUÇÕES OBRIGATÓRIAS PARA ESTE MÉDICO (siga com prioridade máxima):\n  ${d.prompt_ia}`;
+    }
+    return info;
+  })
+  .join("\n\n")}
 
 EXAMES COM PREÇO CADASTRADO:
-${examsWithPrice.map((e) => {
-  const doctorBinding = e.categoria === 'consulta' && e.doctor_id 
-    ? ` [EXCLUSIVO: ${doctors.find(d => d.id === e.doctor_id)?.nome || 'médico não encontrado'}]` 
-    : '';
-  return `• "${e.nome}" (${e.categoria}): ${formatPrice(e)}${doctorBinding} [ID: ${e.id}]`;
-}).join("\n") || "(nenhum)"}
+${
+  examsWithPrice
+    .map((e) => {
+      const doctorBinding =
+        e.categoria === "consulta" && e.doctor_id
+          ? ` [EXCLUSIVO: ${doctors.find((d) => d.id === e.doctor_id)?.nome || "médico não encontrado"}]`
+          : "";
+      return `• "${e.nome}" (${e.categoria}): ${formatPrice(e)}${doctorBinding} [ID: ${e.id}]`;
+    })
+    .join("\n") || "(nenhum)"
+}
 
 EXAMES SEM PREÇO (encaminhar para humano):
-${examsWithoutPrice.map((e) => {
-  const doctorBinding = e.categoria === 'consulta' && e.doctor_id 
-    ? ` [EXCLUSIVO: ${doctors.find(d => d.id === e.doctor_id)?.nome || 'médico não encontrado'}]` 
-    : '';
-  return `• "${e.nome}" (${e.categoria})${doctorBinding} [ID: ${e.id}]`;
-}).join("\n") || "(nenhum)"}
+${
+  examsWithoutPrice
+    .map((e) => {
+      const doctorBinding =
+        e.categoria === "consulta" && e.doctor_id
+          ? ` [EXCLUSIVO: ${doctors.find((d) => d.id === e.doctor_id)?.nome || "médico não encontrado"}]`
+          : "";
+      return `• "${e.nome}" (${e.categoria})${doctorBinding} [ID: ${e.id}]`;
+    })
+    .join("\n") || "(nenhum)"
+}
 
 ${
   foundExams.length > 0
@@ -945,7 +974,8 @@ ${examTypes
         type: "function",
         function: {
           name: "reservar_horario",
-          description: "Reserva um horário. REGRAS OBRIGATÓRIAS: 1) SOMENTE usar após o paciente CONFIRMAR o horário. 2) O paciente DEVE ter informado seu NOME COMPLETO na conversa ANTES de chamar esta função. 3) Se o nome não foi informado, PERGUNTE primeiro e espere a resposta. 4) NUNCA use nomes fictícios ou inventados.",
+          description:
+            "Reserva um horário. REGRAS OBRIGATÓRIAS: 1) SOMENTE usar após o paciente CONFIRMAR o horário. 2) O paciente DEVE ter informado seu NOME COMPLETO na conversa ANTES de chamar esta função. 3) Se o nome não foi informado, PERGUNTE primeiro e espere a resposta. 4) NUNCA use nomes fictícios ou inventados.",
           parameters: {
             type: "object",
             properties: {
@@ -954,7 +984,11 @@ ${examTypes
               data: { type: "string", description: "Data no formato YYYY-MM-DD" },
               hora_inicio: { type: "string", description: "Hora de início HH:MM" },
               hora_fim: { type: "string", description: "Hora de fim HH:MM" },
-              paciente_nome: { type: "string", description: "Nome completo do paciente (DEVE ter sido informado pelo paciente na conversa, NUNCA inventar)" },
+              paciente_nome: {
+                type: "string",
+                description:
+                  "Nome completo do paciente (DEVE ter sido informado pelo paciente na conversa, NUNCA inventar)",
+              },
             },
             required: ["doctor_id", "exam_type_id", "data", "hora_inicio", "hora_fim", "paciente_nome"],
             additionalProperties: false,
@@ -965,12 +999,13 @@ ${examTypes
         type: "function",
         function: {
           name: "reservar_multiplos_horarios",
-          description: "Reserva MÚLTIPLOS exames consecutivos em uma única operação. USAR QUANDO: paciente confirmar 2+ exames em sequência (ex: abdome + transvaginal). REGRAS: 1) Horários devem ser consecutivos (fim do primeiro = início do próximo). 2) Paciente DEVE ter confirmado todos os exames e horário. 3) Nome DEVE ter sido informado na conversa.",
+          description:
+            "Reserva MÚLTIPLOS exames consecutivos em uma única operação. USAR QUANDO: paciente confirmar 2+ exames em sequência (ex: abdome + transvaginal). REGRAS: 1) Horários devem ser consecutivos (fim do primeiro = início do próximo). 2) Paciente DEVE ter confirmado todos os exames e horário. 3) Nome DEVE ter sido informado na conversa.",
           parameters: {
             type: "object",
             properties: {
-              reservas: { 
-                type: "array", 
+              reservas: {
+                type: "array",
                 description: "Array de reservas consecutivas, ordenadas por horário",
                 items: {
                   type: "object",
@@ -981,10 +1016,13 @@ ${examTypes
                     hora_inicio: { type: "string", description: "Hora de início HH:MM" },
                     hora_fim: { type: "string", description: "Hora de fim HH:MM" },
                   },
-                  required: ["doctor_id", "exam_type_id", "data", "hora_inicio", "hora_fim"]
-                }
+                  required: ["doctor_id", "exam_type_id", "data", "hora_inicio", "hora_fim"],
+                },
               },
-              paciente_nome: { type: "string", description: "Nome completo do paciente (DEVE ter sido informado pelo paciente na conversa)" },
+              paciente_nome: {
+                type: "string",
+                description: "Nome completo do paciente (DEVE ter sido informado pelo paciente na conversa)",
+              },
             },
             required: ["reservas", "paciente_nome"],
             additionalProperties: false,
