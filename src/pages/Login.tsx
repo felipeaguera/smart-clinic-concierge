@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
+import logoImage from '@/assets/logo-pilarmed.png';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -67,12 +68,14 @@ export default function Login() {
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <Card className="w-full max-w-md glass-card">
         <CardHeader className="text-center">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-xl bg-primary">
-            <span className="text-2xl font-bold text-primary-foreground">C</span>
+          <div className="mx-auto mb-4">
+            <img src={logoImage} alt="Pilar Med" className="h-16 w-auto" />
           </div>
-          <CardTitle className="text-2xl font-bold">Clínica Admin</CardTitle>
-          <CardDescription>
-            {isSignUp ? 'Criar nova conta' : 'Acesse o painel administrativo'}
+          <CardTitle className="text-2xl font-bold text-[#1a5c4b]">Painel Administrativo</CardTitle>
+          <CardDescription className="text-base">
+            {isSignUp 
+              ? 'Criar nova conta para acesso ao sistema' 
+              : 'Olá! Essa é a Clara, a inteligência artificial da Pilar Med 💚'}
           </CardDescription>
         </CardHeader>
         <CardContent>
