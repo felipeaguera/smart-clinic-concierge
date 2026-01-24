@@ -48,6 +48,35 @@ const SYSTEM_PROMPT = `Você é Clara, assistente virtual de uma clínica médic
     desse profissional. Essas instruções têm PRIORIDADE sobre regras gerais da clínica.
     Exemplo: se as instruções dizem "sempre perguntar se a paciente está grávida antes de agendar 
     ultrassom", faça isso ANTES de buscar disponibilidade.
+13. **MÚLTIPLOS EXAMES CONSECUTIVOS**: Quando o paciente solicitar 2 ou mais exames que podem ser 
+    agendados em sequência (ex: "ultrassom de abdome e transvaginal"):
+    
+    FLUXO OBRIGATÓRIO:
+    1. IDENTIFICAR todos os exames mencionados e suas durações
+    2. VERIFICAR se todos são da mesma categoria (ultrassom) - para garantir mesmo médico
+    3. SOMAR as durações totais (ex: Abdome 30min + Transvaginal 20min = 50min consecutivos)
+    4. Buscar disponibilidade para o PRIMEIRO exame
+    5. Verificar se há tempo consecutivo suficiente para TODOS os exames
+    6. Apresentar horário COMPLETO: "08:00 às 08:50 (Abdome 08:00-08:30, depois Transvaginal 08:30-08:50)"
+    7. Após confirmar nome + horário → usar reservar_multiplos_horarios com array de reservas
+    8. Confirmar TODOS os agendamentos em uma única mensagem de sucesso
+    
+    EXEMPLO DE CONVERSA:
+    Paciente: "Quero marcar ultrassom de abdome e transvaginal"
+    Clara: "Claro! Posso agendar os dois exames em sequência. O Ultrassom de Abdome Total (30 min) 
+           seguido do Ultrassom Transvaginal (20 min). Para qual dia você prefere?"
+    [Após buscar disponibilidade com slots de 50min]
+    Clara: "Para quinta-feira 23/01, tenho disponível:
+           • 08:00 às 08:50 (Abdome + Transvaginal)
+           • 09:00 às 09:50
+           Qual horário prefere?"
+    [Após confirmação e nome]
+    Clara: [Usa reservar_multiplos_horarios]
+           "Agendamentos confirmados para Maria Silva:
+           ✅ Ultrassom de Abdome Total - 08:00 às 08:30
+           ✅ Ultrassom Transvaginal - 08:30 às 08:50
+           
+           Preparo: [listar preparos de ambos]"
 
 
 ═══════════════════════════════════════
@@ -906,6 +935,36 @@ ${examTypes
       {
         type: "function",
         function: {
+          name: "reservar_multiplos_horarios",
+          description: "Reserva MÚLTIPLOS exames consecutivos em uma única operação. USAR QUANDO: paciente confirmar 2+ exames em sequência (ex: abdome + transvaginal). REGRAS: 1) Horários devem ser consecutivos (fim do primeiro = início do próximo). 2) Paciente DEVE ter confirmado todos os exames e horário. 3) Nome DEVE ter sido informado na conversa.",
+          parameters: {
+            type: "object",
+            properties: {
+              reservas: { 
+                type: "array", 
+                description: "Array de reservas consecutivas, ordenadas por horário",
+                items: {
+                  type: "object",
+                  properties: {
+                    doctor_id: { type: "string", description: "UUID do médico" },
+                    exam_type_id: { type: "string", description: "UUID do tipo de exame" },
+                    data: { type: "string", description: "Data no formato YYYY-MM-DD" },
+                    hora_inicio: { type: "string", description: "Hora de início HH:MM" },
+                    hora_fim: { type: "string", description: "Hora de fim HH:MM" },
+                  },
+                  required: ["doctor_id", "exam_type_id", "data", "hora_inicio", "hora_fim"]
+                }
+              },
+              paciente_nome: { type: "string", description: "Nome completo do paciente (DEVE ter sido informado pelo paciente na conversa)" },
+            },
+            required: ["reservas", "paciente_nome"],
+            additionalProperties: false,
+          },
+        },
+      },
+      {
+        type: "function",
+        function: {
           name: "encaminhar_humano",
           description:
             "Encaminha para atendente humano. Usar para: convênio, desconto, item sem preço, pedido explícito, dúvida clínica, TROCA DE HORÁRIO ou REAGENDAMENTO de consulta/exame já marcado.",
@@ -1210,6 +1269,21 @@ ${examTypes
           });
           result = await reservarResponse.json();
           console.log("Reservar result:", result);
+        } else if (functionName === "reservar_multiplos_horarios") {
+          // Nova função para reservar múltiplos exames consecutivos
+          const reservarMultiplosResponse = await fetch(`${supabaseUrl}/functions/v1/agenda-reservar-multiplos`, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${supabaseKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              reservas: args.reservas,
+              paciente_nome: args.paciente_nome,
+            }),
+          });
+          result = await reservarMultiplosResponse.json();
+          console.log("Reservar múltiplos result:", result);
         } else if (functionName === "encaminhar_humano") {
           // FALLBACK LOGIC: Check if we have items with prices that should be returned first
           const examsWithPriceFound = foundExams.filter((e) => e.has_price && e.price_private);
