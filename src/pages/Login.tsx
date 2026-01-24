@@ -4,9 +4,9 @@ import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Sparkles, ArrowRight } from 'lucide-react';
 import logoImage from '@/assets/logo-pilarmed.png';
 
 export default function Login() {
@@ -14,6 +14,7 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSignUp, setIsSignUp] = useState(false);
+  const [showForm, setShowForm] = useState(false);
   const { signIn, signUp, user, isAdmin, isLoading } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -65,59 +66,150 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md glass-card">
-        <CardHeader className="text-center">
-          <div className="mx-auto mb-4">
-            <img src={logoImage} alt="Pilar Med" className="h-16 w-auto" />
-          </div>
-          <CardTitle className="text-2xl font-bold text-[#1a5c4b]">Painel Administrativo</CardTitle>
-          <CardDescription className="text-base">
-            {isSignUp 
-              ? 'Criar nova conta para acesso ao sistema' 
-              : 'Olá! Essa é a Clara, a inteligência artificial da Pilar Med 💚'}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="email">E-mail</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="admin@clinica.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                disabled={isSubmitting}
-              />
+    <div className="min-h-screen flex flex-col bg-gradient-to-br from-[#f8faf9] via-white to-[#f0f7f4]">
+      {/* Header com logo */}
+      <header className="w-full p-6">
+        <img src={logoImage} alt="Pilar Med" className="h-10 w-auto" />
+      </header>
+
+      {/* Conteúdo principal */}
+      <main className="flex-1 flex items-center justify-center px-4 pb-12">
+        <div className="w-full max-w-md space-y-8">
+          
+          {/* Introdução Clara */}
+          {!showForm ? (
+            <div className="text-center space-y-8 animate-fade-in">
+              {/* Avatar Clara */}
+              <div className="relative mx-auto w-24 h-24">
+                <div className="absolute inset-0 bg-gradient-to-br from-[#1a5c4b] to-[#2d8a6e] rounded-full animate-pulse opacity-20" />
+                <div className="relative w-full h-full bg-gradient-to-br from-[#1a5c4b] to-[#2d8a6e] rounded-full flex items-center justify-center shadow-lg">
+                  <Sparkles className="w-10 h-10 text-white" />
+                </div>
+              </div>
+
+              {/* Texto de boas-vindas */}
+              <div className="space-y-4">
+                <h1 className="text-3xl font-bold text-[#1a5c4b] leading-tight">
+                  Olá! Eu sou a Clara
+                </h1>
+                <p className="text-lg text-muted-foreground leading-relaxed">
+                  A inteligência artificial da <span className="font-semibold text-[#c9a54d]">Pilar Med</span>
+                </p>
+                <p className="text-sm text-muted-foreground/80 max-w-sm mx-auto">
+                  Estou aqui para ajudar a gerenciar agendamentos, médicos e muito mais.
+                </p>
+              </div>
+
+              {/* Botão de acesso */}
+              <Button 
+                onClick={() => setShowForm(true)}
+                className="w-full max-w-xs mx-auto h-12 text-base font-medium bg-[#1a5c4b] hover:bg-[#154a3d] text-white shadow-lg shadow-[#1a5c4b]/20 transition-all duration-300 hover:shadow-xl hover:shadow-[#1a5c4b]/30"
+              >
+                Acessar Painel
+                <ArrowRight className="ml-2 h-5 w-5" />
+              </Button>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">Senha</Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                disabled={isSubmitting}
-              />
-            </div>
-            <Button type="submit" className="w-full" disabled={isSubmitting || isLoading}>
-              {(isSubmitting || isLoading) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {isSignUp ? 'Criar conta' : 'Entrar'}
-            </Button>
-          </form>
-          <div className="mt-4 text-center">
-            <button
-              type="button"
-              onClick={() => setIsSignUp(!isSignUp)}
-              className="text-sm text-muted-foreground hover:text-primary transition-colors"
-            >
-              {isSignUp ? 'Já tem conta? Fazer login' : 'Não tem conta? Criar uma'}
-            </button>
-          </div>
-        </CardContent>
-      </Card>
+          ) : (
+            /* Formulário de Login */
+            <Card className="border-0 shadow-xl shadow-black/5 animate-fade-in">
+              <CardContent className="pt-8 pb-6 px-8">
+                {/* Header do form */}
+                <div className="text-center mb-8">
+                  <div className="mx-auto w-14 h-14 bg-gradient-to-br from-[#1a5c4b] to-[#2d8a6e] rounded-full flex items-center justify-center mb-4 shadow-lg">
+                    <Sparkles className="w-7 h-7 text-white" />
+                  </div>
+                  <h2 className="text-xl font-semibold text-foreground">
+                    {isSignUp ? 'Criar nova conta' : 'Bem-vindo de volta!'}
+                  </h2>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {isSignUp 
+                      ? 'Preencha os dados para solicitar acesso' 
+                      : 'Entre com suas credenciais'}
+                  </p>
+                </div>
+
+                <form onSubmit={handleSubmit} className="space-y-5">
+                  <div className="space-y-2">
+                    <Label htmlFor="email" className="text-sm font-medium">
+                      E-mail
+                    </Label>
+                    <Input
+                      id="email"
+                      type="email"
+                      placeholder="seu@email.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      disabled={isSubmitting}
+                      className="h-11 bg-muted/50 border-0 focus-visible:ring-[#1a5c4b]"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="password" className="text-sm font-medium">
+                      Senha
+                    </Label>
+                    <Input
+                      id="password"
+                      type="password"
+                      placeholder="••••••••"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      disabled={isSubmitting}
+                      className="h-11 bg-muted/50 border-0 focus-visible:ring-[#1a5c4b]"
+                    />
+                  </div>
+                  <Button 
+                    type="submit" 
+                    className="w-full h-11 text-base font-medium bg-[#1a5c4b] hover:bg-[#154a3d] text-white mt-2" 
+                    disabled={isSubmitting || isLoading}
+                  >
+                    {(isSubmitting || isLoading) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    {isSignUp ? 'Solicitar acesso' : 'Entrar'}
+                  </Button>
+                </form>
+
+                {/* Divisor */}
+                <div className="relative my-6">
+                  <div className="absolute inset-0 flex items-center">
+                    <span className="w-full border-t border-muted" />
+                  </div>
+                  <div className="relative flex justify-center text-xs uppercase">
+                    <span className="bg-card px-2 text-muted-foreground">ou</span>
+                  </div>
+                </div>
+
+                {/* Toggle login/signup */}
+                <button
+                  type="button"
+                  onClick={() => setIsSignUp(!isSignUp)}
+                  className="w-full text-center text-sm text-muted-foreground hover:text-[#1a5c4b] transition-colors"
+                >
+                  {isSignUp ? (
+                    <>Já tem conta? <span className="font-medium text-[#1a5c4b]">Fazer login</span></>
+                  ) : (
+                    <>Não tem conta? <span className="font-medium text-[#1a5c4b]">Criar uma</span></>
+                  )}
+                </button>
+
+                {/* Voltar */}
+                <button
+                  type="button"
+                  onClick={() => setShowForm(false)}
+                  className="w-full text-center text-xs text-muted-foreground/60 hover:text-muted-foreground mt-4 transition-colors"
+                >
+                  ← Voltar ao início
+                </button>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      </main>
+
+      {/* Footer */}
+      <footer className="w-full p-6 text-center">
+        <p className="text-xs text-muted-foreground/60">
+          © {new Date().getFullYear()} Pilar Med — Medicina Especializada
+        </p>
+      </footer>
     </div>
   );
 }
