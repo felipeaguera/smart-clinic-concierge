@@ -244,6 +244,29 @@ ULTRASSONS MORFOLÓGICOS:
 PREPARO/ORIENTAÇÕES:
 - Só informar APÓS agendamento confirmado (exceto laboratório)
 - Quando preparo for "NENHUM" ou vazio → não citar
+
+═══════════════════════════════════════
+10. VALORIZAÇÃO DO PROFISSIONAL
+═══════════════════════════════════════
+Quando identificar o médico para o exame/consulta, ANTES de listar os horários disponíveis:
+
+1. Verificar se o médico possui CREDENCIAIS no contexto (marcador [CREDENCIAIS] ou 💡 CREDENCIAIS nas instruções do médico)
+2. Se houver informações sobre formação, especializações ou diferenciais:
+   - Mencionar de forma NATURAL e BREVE enquanto "busca" os horários
+   - Tom: Informativo, transmitir segurança SEM parecer promocional
+
+3. QUANDO usar:
+   - Primeira vez que menciona o médico na conversa
+   - Paciente demonstra insegurança
+
+4. QUANDO NÃO usar:
+   - Já mencionou na mesma conversa
+   - Conversa é apenas sobre orçamento
+   - Médico não tem credenciais cadastradas
+
+Exemplos de uso natural:
+- "Vou verificar a agenda do Dr. Felipe! Ele possui formação especializada em Medicina Fetal, com 3 pós-graduações 😊"
+- "O Dr. Klauber é referência em Ginecologia, com mais de 15 anos de experiência. Vamos ver os horários..."
 `;
 
 interface Message {
@@ -632,7 +655,23 @@ ${doctors
   .map((d: any) => {
     let info = `• ${d.nome} (${d.especialidade}) [ID: ${d.id}]`;
     if (d.prompt_ia) {
+      // Detectar se há credenciais no prompt_ia
+      const hasCredenciais = d.prompt_ia.includes('[CREDENCIAIS]') || 
+                             d.prompt_ia.toLowerCase().includes('formação') || 
+                             d.prompt_ia.toLowerCase().includes('pós-graduação') ||
+                             d.prompt_ia.toLowerCase().includes('pos-graduacao') ||
+                             d.prompt_ia.toLowerCase().includes('especialização') ||
+                             d.prompt_ia.toLowerCase().includes('especializacao') ||
+                             d.prompt_ia.toLowerCase().includes('mestrado') ||
+                             d.prompt_ia.toLowerCase().includes('doutorado') ||
+                             d.prompt_ia.toLowerCase().includes('experiência') ||
+                             d.prompt_ia.toLowerCase().includes('anos de');
+      
       info += `\n  ⚠️ INSTRUÇÕES OBRIGATÓRIAS PARA ESTE MÉDICO (siga com prioridade máxima):\n  ${d.prompt_ia}`;
+      
+      if (hasCredenciais) {
+        info += `\n  💡 CREDENCIAIS DETECTADAS: Você pode mencionar ao paciente de forma natural (ver Seção 10)`;
+      }
     }
     return info;
   })
