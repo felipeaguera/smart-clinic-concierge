@@ -1,5 +1,5 @@
 import { useLocation } from 'react-router-dom';
-import { Users, FileText, Calendar, LogOut } from 'lucide-react';
+import { Users, FileText, Calendar, LogOut, UserCog } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import {
   Sidebar,
@@ -16,7 +16,9 @@ import {
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
 
-const menuItems = [
+const SUPER_ADMIN_EMAIL = 'felipe_aguera@hotmail.com';
+
+const baseMenuItems = [
   { title: 'Médicos', url: '/admin/medicos', icon: Users },
   { title: 'Serviços', url: '/admin/exames', icon: FileText },
   { title: 'Agendamentos', url: '/admin/agendamentos', icon: Calendar },
@@ -25,7 +27,14 @@ const menuItems = [
 export function AdminSidebar() {
   const location = useLocation();
   const { signOut, user } = useAuth();
-
+  
+  // Verificar se é o Super Admin
+  const isSuperAdmin = user?.email === SUPER_ADMIN_EMAIL;
+  
+  // Montar menu com item de usuários condicional
+  const menuItems = isSuperAdmin 
+    ? [...baseMenuItems, { title: 'Usuários', url: '/admin/usuarios', icon: UserCog }]
+    : baseMenuItems;
   return (
     <Sidebar className="border-r border-sidebar-border">
       <SidebarHeader className="p-4">
