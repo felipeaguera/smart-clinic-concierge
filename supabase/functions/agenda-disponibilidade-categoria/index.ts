@@ -121,7 +121,24 @@ Deno.serve(async (req) => {
         rule.tipo_atendimento === 'ambos' || rule.tipo_atendimento === examType.categoria
       ) || []
 
-      if (filteredRules.length === 0) {
+      // Buscar schedule_openings (agendas extras) para esta data específica
+      const { data: scheduleOpenings, error: openingsError } = await supabase
+        .from('schedule_openings')
+        .select('*')
+        .eq('doctor_id', doctor.id)
+        .eq('data', data)
+
+      if (openingsError) {
+        console.error(`Erro ao buscar schedule_openings do médico ${doctor.nome}:`, openingsError)
+      }
+
+      // Filtrar schedule_openings por tipo_atendimento compatível
+      const filteredOpenings = scheduleOpenings?.filter(opening => 
+        opening.tipo_atendimento === 'ambos' || opening.tipo_atendimento === examType.categoria
+      ) || []
+
+      // Se não tem regras E não tem agendas extras para este dia/tipo, pular
+      if (filteredRules.length === 0 && filteredOpenings.length === 0) {
         console.log(`Médico ${doctor.nome} não atende ${examType.categoria} neste dia`)
         continue
       }
@@ -138,12 +155,23 @@ Deno.serve(async (req) => {
         continue
       }
 
-      // Gerar slots
+      // Gerar slots das regras recorrentes
       const allSlots: TimeSlot[] = []
       for (const rule of filteredRules) {
         const slots = generateTimeSlots(
           rule.hora_inicio,
           rule.hora_fim,
+          duracaoMinutos,
+          stepMinutos
+        )
+        allSlots.push(...slots)
+      }
+
+      // Gerar slots das agendas extras (schedule_openings)
+      for (const opening of filteredOpenings) {
+        const slots = generateTimeSlots(
+          opening.hora_inicio,
+          opening.hora_fim,
           duracaoMinutos,
           stepMinutos
         )

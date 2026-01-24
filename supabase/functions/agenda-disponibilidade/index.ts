@@ -159,8 +159,33 @@ Deno.serve(async (req) => {
 
     console.log('Regras filtradas por tipo_atendimento:', filteredRules)
 
-    if (filteredRules.length === 0) {
-      console.log('Nenhuma regra de atendimento encontrada para este dia/tipo')
+    // 2b) Buscar schedule_openings (agendas extras) para esta data específica
+    const { data: scheduleOpenings, error: openingsError } = await supabase
+      .from('schedule_openings')
+      .select('*')
+      .eq('doctor_id', doctor_id)
+      .eq('data', data)
+
+    if (openingsError) {
+      console.error('Erro ao buscar schedule_openings:', openingsError)
+      return new Response(
+        JSON.stringify({ error: 'Erro ao buscar agendas extras' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    console.log('Schedule openings encontradas:', scheduleOpenings)
+
+    // Filtrar schedule_openings por tipo_atendimento compatível
+    const filteredOpenings = scheduleOpenings?.filter(opening => 
+      opening.tipo_atendimento === 'ambos' || opening.tipo_atendimento === examType.categoria
+    ) || []
+
+    console.log('Schedule openings filtradas por tipo_atendimento:', filteredOpenings)
+
+    // Se não há regras E não há agendas extras, não tem horário
+    if (filteredRules.length === 0 && filteredOpenings.length === 0) {
+      console.log('Nenhuma regra ou agenda extra encontrada para este dia/tipo')
       return new Response(
         JSON.stringify({ 
           horarios_disponiveis: [],
@@ -207,6 +232,7 @@ Deno.serve(async (req) => {
 
     const allSlots: TimeSlot[] = []
 
+    // Gerar slots das regras recorrentes
     for (const rule of filteredRules) {
       const slots = generateTimeSlots(
         rule.hora_inicio,
@@ -217,7 +243,18 @@ Deno.serve(async (req) => {
       allSlots.push(...slots)
     }
 
-    console.log('Slots gerados:', allSlots)
+    // Gerar slots das agendas extras (schedule_openings)
+    for (const opening of filteredOpenings) {
+      const slots = generateTimeSlots(
+        opening.hora_inicio,
+        opening.hora_fim,
+        duracaoMinutos,
+        stepMinutos
+      )
+      allSlots.push(...slots)
+    }
+
+    console.log('Slots gerados (rules + openings):', allSlots)
 
     // 5) Buscar appointments existentes (não cancelados)
     const { data: appointments, error: appointmentsError } = await supabase

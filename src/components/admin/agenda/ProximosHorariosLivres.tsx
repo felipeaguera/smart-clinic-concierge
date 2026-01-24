@@ -14,9 +14,12 @@ interface DoctorRule {
   tipo_atendimento: string;
 }
 
-interface FreeSlot {
-  date: Date;
-  time: string;
+interface ScheduleOpening {
+  id: string;
+  data: string;
+  hora_inicio: string;
+  hora_fim: string;
+  tipo_atendimento: string;
 }
 
 interface DayGroup {
@@ -27,6 +30,7 @@ interface DayGroup {
 interface ProximosHorariosLivresProps {
   doctorId: string;
   doctorRules: DoctorRule[];
+  scheduleOpenings?: ScheduleOpening[];
   tipoAtendimento: 'consulta' | 'ultrassom';
   currentDate: Date;
   onSlotClick: (date: Date, time: string) => void;
@@ -46,6 +50,7 @@ function minutesToTime(minutes: number): string {
 export function ProximosHorariosLivres({
   doctorId,
   doctorRules,
+  scheduleOpenings = [],
   tipoAtendimento,
   currentDate,
   onSlotClick,
@@ -67,14 +72,22 @@ export function ProximosHorariosLivres({
           const dayOfWeek = searchDate.getDay();
           const dateStr = format(searchDate, 'yyyy-MM-dd');
 
-          // Check rules for this day
+          // Check rules for this day (recurring rules)
           const rulesForDay = doctorRules.filter(
             (rule) =>
               rule.dia_semana === dayOfWeek &&
               (rule.tipo_atendimento === 'ambos' || rule.tipo_atendimento === tipoAtendimento)
           );
 
-          if (rulesForDay.length === 0) continue;
+          // Check schedule_openings (agendas extras) for this specific date
+          const openingsForDay = scheduleOpenings.filter(
+            (opening) =>
+              opening.data === dateStr &&
+              (opening.tipo_atendimento === 'ambos' || opening.tipo_atendimento === tipoAtendimento)
+          );
+
+          // If no rules AND no openings for this day, skip
+          if (rulesForDay.length === 0 && openingsForDay.length === 0) continue;
 
           // Check exceptions
           const { data: exceptions } = await supabase
@@ -93,12 +106,22 @@ export function ProximosHorariosLivres({
             .eq('data', dateStr)
             .neq('status', 'cancelado');
 
-          // Find day range
+          // Combine rules + openings to find day range
           let dayStart = Infinity;
           let dayEnd = 0;
+          
+          // From recurring rules
           for (const rule of rulesForDay) {
             const start = timeToMinutes(rule.hora_inicio);
             const end = timeToMinutes(rule.hora_fim);
+            if (start < dayStart) dayStart = start;
+            if (end > dayEnd) dayEnd = end;
+          }
+          
+          // From schedule openings (agendas extras)
+          for (const opening of openingsForDay) {
+            const start = timeToMinutes(opening.hora_inicio);
+            const end = timeToMinutes(opening.hora_fim);
             if (start < dayStart) dayStart = start;
             if (end > dayEnd) dayEnd = end;
           }
@@ -128,14 +151,22 @@ export function ProximosHorariosLivres({
               return min >= aptStart && min < aptEnd;
             });
 
-            // Check if within work hours
-            const isWithinWork = rulesForDay.some(rule => {
+            // Check if within work hours (from rules)
+            const isWithinRules = rulesForDay.some(rule => {
               const ruleStart = timeToMinutes(rule.hora_inicio);
               const ruleEnd = timeToMinutes(rule.hora_fim);
               return min >= ruleStart && min < ruleEnd;
             });
 
-            if (!isOccupied && isWithinWork) {
+            // Check if within schedule openings (agendas extras)
+            const isWithinOpenings = openingsForDay.some(opening => {
+              const openingStart = timeToMinutes(opening.hora_inicio);
+              const openingEnd = timeToMinutes(opening.hora_fim);
+              return min >= openingStart && min < openingEnd;
+            });
+
+            // Slot is available if within rules OR openings, and not occupied
+            if (!isOccupied && (isWithinRules || isWithinOpenings)) {
               freeSlots.push(minutesToTime(min));
             }
           }
@@ -153,7 +184,7 @@ export function ProximosHorariosLivres({
     }
 
     fetchFreeSlots();
-  }, [doctorId, doctorRules, tipoAtendimento, currentDate]);
+  }, [doctorId, doctorRules, scheduleOpenings, tipoAtendimento, currentDate]);
 
   return (
     <Card>
