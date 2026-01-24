@@ -11,6 +11,7 @@ import Medicos from "./pages/admin/Medicos";
 import MedicoPerfil from "./pages/admin/MedicoPerfil";
 import TiposExame from "./pages/admin/TiposExame";
 import Agendamentos from "./pages/admin/Agendamentos";
+import Usuarios from "./pages/admin/Usuarios";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -58,6 +59,14 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <Agendamentos />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/usuarios"
+              element={
+                <ProtectedRoute>
+                  <Usuarios />
                 </ProtectedRoute>
               }
             />
