@@ -9,5 +9,8 @@ verify_jwt = false
 [functions.agenda-reservar]
 verify_jwt = false
 
+[functions.agenda-reservar-multiplos]
+verify_jwt = false
+
 [functions.chat-atendimento]
 verify_jwt = false
