@@ -1,96 +1,120 @@
 
 
-## Plano: Consolidação Conservadora do Prompt (Sem Risco de Quebrar Lógica)
+## Plano: Clara Valoriza o Médico Durante a Busca de Horários
 
 ### Objetivo
-Eliminar duplicações usando referências cruzadas, mantendo 100% da lógica original.
+Fazer a Clara mencionar as qualificações do médico de forma natural enquanto busca disponibilidade, usando informações já cadastradas no `prompt_ia`.
 
 ---
 
-### Princípio: Substituir Duplicação por Referência
+### Alteração 1: Nova Seção no SYSTEM_PROMPT - Regra de Valorização
 
-Em vez de remover regras, vamos **manter a regra completa em UM lugar** e **referenciar** nos outros lugares.
+**Arquivo:** `supabase/functions/chat-atendimento/index.ts`
 
----
+**Localização:** Adicionar nova seção 10 após a seção 9 (REGRAS ESPECÍFICAS POR CATEGORIA)
 
-### Alteração 1: Consolidar Desambiguação de Ultrassom
-
-**Manter completo em:** Regra 10A (linhas 28-33)
-
-**Substituir em:**
-- Passo 0A (linhas 177-182) → `"A) ULTRASSONS: Aplicar Regra 10A"`
-- Regra 6 linha 384 → Remover frase duplicada (já está na Regra 10A)
-
----
-
-### Alteração 2: Consolidar Desambiguação de Consulta/Médico
-
-**Manter completo em:** Regra 10C e 10D (linhas 35-40)
-
-**Substituir em:**
-- Passo 0C (linhas 191-196) → `"C) CONSULTAS: Aplicar Regra 10C"`
-- Passo 0D (linhas 198-209) → `"D) POR MÉDICO: Aplicar Regra 10D"`
-
----
-
-### Alteração 3: Consolidar Regra Temporal
-
-**Manter completo em:** Seção "Regra Temporal Absoluta" (linhas 315-325)
-
-**Substituir em:**
-- Passo 3 linha 239 → `"Ver Regra Temporal Absoluta abaixo"`
-- Seção Validação de Data (linhas 244-255) → Mesclar na Regra Temporal (não duplicar)
-
----
-
-### Alteração 4: Remover Duplicação de Duração
-
-**Manter em:** Regra de Ouro 6 (linha 22)
-
-**Remover de:** Regra 6 linha 382 (já está na Regra de Ouro)
-
----
-
-### Alteração 5: Adicionar Referência de Upsell no Fluxo
-
-**Problema:** A Regra 14 (Upsell) não é referenciada no Fluxo de Agendamento
-
-**Solução:** Adicionar no Passo 1 do Fluxo de Agendamento:
+**Conteúdo:**
 ```
-PASSO 1: Se exame obstétrico → Aplicar Regra 14 (Upsell) ANTES de buscar disponibilidade
+═══════════════════════════════════════
+10. VALORIZAÇÃO DO PROFISSIONAL
+═══════════════════════════════════════
+Quando identificar o médico para o exame/consulta, ANTES de listar os horários disponíveis:
+
+1. Verificar se o médico possui CREDENCIAIS no contexto (seção [CREDENCIAIS] das instruções do médico)
+2. Se houver informações sobre formação, especializações ou diferenciais:
+   - Mencionar de forma NATURAL e BREVE enquanto "busca" os horários
+   - Tom: Informativo, transmitir segurança SEM parecer promocional
+
+3. QUANDO usar:
+   - Primeira vez que menciona o médico na conversa
+   - Paciente demonstra insegurança
+
+4. QUANDO NÃO usar:
+   - Já mencionou na mesma conversa
+   - Conversa é apenas sobre orçamento
+   - Médico não tem credenciais cadastradas
+
+Exemplos de uso natural:
+- "Vou verificar a agenda do Dr. Felipe! Ele possui formação especializada em Medicina Fetal, com 3 pós-graduações 😊"
+- "O Dr. Klauber é referência em Ginecologia, com mais de 15 anos de experiência. Vamos ver os horários..."
 ```
 
 ---
 
-### O Que NÃO Será Alterado
+### Alteração 2: Ajustar Formato do Contexto do Médico
 
-| Seção | Status |
-|-------|--------|
-| Regras de Ouro 1-9 | Mantidas integralmente |
-| Regra 11 (Correspondência Exata) | Mantida |
-| Regra 12 (Instruções do Médico) | Mantida |
-| Regra 13 (Múltiplos Exames) | Mantida |
-| Regra 14 (Upsell) | Mantida - frases não alteradas |
-| Fluxo de Orçamento | Mantido |
-| Seção 4 (Encaminhar Humano) | Mantida |
-| Seção 5 (Tom de Voz) | Mantida |
-| Seção 7 (Laboratório) | Mantida |
-| Seção 8 (Morfológicos) | Mantida |
+**Localização:** Linhas 630-639 (onde monta o contexto dos médicos)
+
+**Mudança:** Separar CREDENCIAIS de INSTRUÇÕES para a IA saber o que pode falar
+
+**De:**
+```javascript
+if (d.prompt_ia) {
+  info += `\n  ⚠️ INSTRUÇÕES OBRIGATÓRIAS PARA ESTE MÉDICO:\n  ${d.prompt_ia}`;
+}
+```
+
+**Para:**
+```javascript
+if (d.prompt_ia) {
+  // Tentar separar credenciais de instruções
+  const hasCredenciais = d.prompt_ia.includes('[CREDENCIAIS]') || 
+                         d.prompt_ia.includes('formação') || 
+                         d.prompt_ia.includes('pós-graduação') ||
+                         d.prompt_ia.includes('especialização');
+  
+  info += `\n  ⚠️ INSTRUÇÕES OBRIGATÓRIAS (seguir com prioridade):\n  ${d.prompt_ia}`;
+  
+  if (hasCredenciais) {
+    info += `\n  💡 CREDENCIAIS (pode mencionar ao paciente de forma natural)`;
+  }
+}
+```
 
 ---
 
-### Resultado Esperado
+### Alteração 3: Sugerir Formato para o prompt_ia do Médico
 
-- **Redução:** ~20% (443 → ~350 linhas)
-- **Lógica removida:** ZERO
-- **Risco:** MÍNIMO (apenas substitui texto duplicado por referências)
-- **Benefício:** Modelo não vê mesma instrução 3 vezes, segue melhor
+Para facilitar a distinção, sugerir que o campo `prompt_ia` use marcadores:
+
+**Formato Sugerido:**
+```
+[CREDENCIAIS]
+- 3 pós-graduações em Medicina Fetal
+- Mestrado pela USP
+- 15 anos de experiência
+
+[INSTRUÇÕES]
+- Preferir horários pela manhã
+- Não agendar menos de 30 minutos entre consultas
+```
+
+Isso permite que a IA:
+1. **CREDENCIAIS** → Pode mencionar ao paciente
+2. **INSTRUÇÕES** → Apenas para comportamento interno
 
 ---
 
-### Arquivo Modificado
+### Fluxo Esperado
+
+| Etapa | O que acontece |
+|-------|----------------|
+| Paciente: "Quero ultrassom obstétrico" | Clara aplica desambiguação + upsell |
+| Paciente confirma exame | Clara identifica Dr. Felipe |
+| **NOVO** | Clara: "Vou verificar a agenda do Dr. Felipe! Ele possui formação especializada em Medicina Fetal, com 3 pós-graduações 😊" |
+| Clara busca horários | Apresenta opções disponíveis |
+
+---
+
+### Arquivos Modificados
 
 | Arquivo | Alteração |
 |---------|-----------|
-| `supabase/functions/chat-atendimento/index.ts` | Consolidação do SYSTEM_PROMPT com referências cruzadas |
+| `supabase/functions/chat-atendimento/index.ts` | Nova seção 10 no SYSTEM_PROMPT + ajuste no contexto dos médicos |
+
+---
+
+### Próximo Passo Opcional
+
+Depois de implementar, você pode atualizar o `prompt_ia` de cada médico no painel Admin → Médicos → Prompt IA para usar o formato com `[CREDENCIAIS]` e `[INSTRUÇÕES]`.
 
