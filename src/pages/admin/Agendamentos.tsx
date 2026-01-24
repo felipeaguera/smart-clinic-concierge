@@ -107,7 +107,7 @@ export default function Agendamentos() {
     },
   });
 
-  // Fetch schedule openings for selected doctor and date
+  // Fetch schedule openings for selected doctor and date (for the grid)
   const { data: scheduleOpenings } = useQuery({
     queryKey: ['schedule_openings', selectedDoctorId, format(selectedDate, 'yyyy-MM-dd')],
     queryFn: async () => {
@@ -119,6 +119,22 @@ export default function Agendamentos() {
         .eq('data', format(selectedDate, 'yyyy-MM-dd'));
       if (error) throw error;
       return data as ScheduleOpening[];
+    },
+    enabled: !!selectedDoctorId,
+  });
+
+  // Fetch ALL future schedule openings for selected doctor (for ProximosHorariosLivres)
+  const { data: doctorFutureOpenings } = useQuery({
+    queryKey: ['doctor_future_openings', selectedDoctorId],
+    queryFn: async () => {
+      if (!selectedDoctorId) return [];
+      const { data, error } = await supabase
+        .from('schedule_openings')
+        .select('id, data, hora_inicio, hora_fim, tipo_atendimento')
+        .eq('doctor_id', selectedDoctorId)
+        .gte('data', format(new Date(), 'yyyy-MM-dd'));
+      if (error) throw error;
+      return data as { id: string; data: string; hora_inicio: string; hora_fim: string; tipo_atendimento: string }[];
     },
     enabled: !!selectedDoctorId,
   });
@@ -424,6 +440,7 @@ export default function Agendamentos() {
             <ProximosHorariosLivres
               doctorId={selectedDoctorId}
               doctorRules={selectedDoctorRules}
+              scheduleOpenings={doctorFutureOpenings || []}
               tipoAtendimento={tipoAtendimento}
               currentDate={selectedDate}
               onSlotClick={handleProximoHorarioClick}
