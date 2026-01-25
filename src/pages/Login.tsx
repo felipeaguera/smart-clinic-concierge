@@ -7,11 +7,13 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, Sparkles, ArrowRight } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
 import logoImage from '@/assets/logo-pilarmed.png';
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [nome, setNome] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSignUp, setIsSignUp] = useState(false);
   const [showForm, setShowForm] = useState(false);
@@ -38,26 +40,56 @@ export default function Login() {
       return;
     }
 
+    if (isSignUp && !nome.trim()) {
+      toast({
+        title: 'Erro',
+        description: 'Preencha seu nome completo',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
-      const { error } = isSignUp 
-        ? await signUp(email, password)
-        : await signIn(email, password);
+      if (isSignUp) {
+        const { data, error } = await signUp(email, password);
 
-      if (error) {
-        toast({
-          title: 'Erro',
-          description: error.message,
-          variant: 'destructive',
-        });
-        setIsSubmitting(false);
-      } else if (isSignUp) {
-        toast({
-          title: 'Conta criada!',
-          description: 'Solicite ao administrador para ativar seu acesso.',
-        });
-        setIsSubmitting(false);
+        if (error) {
+          toast({
+            title: 'Erro',
+            description: error.message,
+            variant: 'destructive',
+          });
+          setIsSubmitting(false);
+        } else if (data?.user) {
+          // Atualizar o perfil com o nome
+          await supabase
+            .from('profiles')
+            .update({ nome: nome.trim() })
+            .eq('id', data.user.id);
+
+          toast({
+            title: 'Conta criada!',
+            description: 'Solicite ao administrador para ativar seu acesso.',
+          });
+          setIsSubmitting(false);
+          setNome('');
+          setEmail('');
+          setPassword('');
+          setIsSignUp(false);
+        }
+      } else {
+        const { error } = await signIn(email, password);
+
+        if (error) {
+          toast({
+            title: 'Erro',
+            description: error.message,
+            variant: 'destructive',
+          });
+          setIsSubmitting(false);
+        }
       }
       // Se login bem-sucedido, o useEffect vai redirecionar quando isAdmin for true
     } catch {
@@ -129,6 +161,22 @@ export default function Login() {
                 </div>
 
                 <form onSubmit={handleSubmit} className="space-y-5">
+                  {isSignUp && (
+                    <div className="space-y-2">
+                      <Label htmlFor="nome" className="text-sm font-medium">
+                        Nome completo
+                      </Label>
+                      <Input
+                        id="nome"
+                        type="text"
+                        placeholder="Seu nome completo"
+                        value={nome}
+                        onChange={(e) => setNome(e.target.value)}
+                        disabled={isSubmitting}
+                        className="h-11 bg-muted/50 border-0 focus-visible:ring-[#1a5c4b]"
+                      />
+                    </div>
+                  )}
                   <div className="space-y-2">
                     <Label htmlFor="email" className="text-sm font-medium">
                       E-mail
