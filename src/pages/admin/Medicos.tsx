@@ -259,7 +259,8 @@ export default function Medicos() {
                         onClick={() => handleRowClick(doctor)}
                       >
                         <TableCell className="font-medium">{doctor.nome}</TableCell>
-                        <TableCell>
+                        <TableCell>{doctor.especialidade}</TableCell>
+                        <TableCell onClick={(e) => e.stopPropagation()}>
                           <Switch
                             checked={doctor.ativo}
                             onCheckedChange={(checked) =>
@@ -267,7 +268,7 @@ export default function Medicos() {
                             }
                           />
                         </TableCell>
-                        <TableCell>
+                        <TableCell onClick={(e) => e.stopPropagation()}>
                           <div className="flex gap-1">
                             <Button variant="ghost" size="sm" onClick={() => handleEdit(doctor)}>
                               <Pencil className="h-4 w-4" />
