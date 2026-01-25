@@ -23,6 +23,7 @@ import {
 interface Usuario {
   id: string;
   email: string;
+  nome: string | null;
   created_at: string;
   role: string | null;
   is_super_admin: boolean;
@@ -81,7 +82,7 @@ export default function Usuarios() {
       queryClient.invalidateQueries({ queryKey: ['usuarios'] });
       toast({
         title: 'Usuário aprovado!',
-        description: 'A secretária agora tem acesso ao sistema.',
+        description: 'O usuário agora tem acesso ao sistema.',
       });
       setLoadingUserId(null);
     },
@@ -207,7 +208,7 @@ export default function Usuarios() {
             Gestão de Usuários
           </h1>
           <p className="text-muted-foreground mt-1">
-            Gerencie o acesso das secretárias ao sistema
+            Gerencie o acesso dos usuários ao sistema
           </p>
         </div>
 
@@ -237,8 +238,13 @@ export default function Usuarios() {
                         className="flex items-center justify-between p-4 rounded-lg bg-muted/50 border"
                       >
                         <div>
-                          <p className="font-medium">{usuario.email}</p>
-                          <p className="text-sm text-muted-foreground">
+                          <p className="font-medium">
+                            {usuario.nome || usuario.email}
+                          </p>
+                          {usuario.nome && (
+                            <p className="text-sm text-muted-foreground">{usuario.email}</p>
+                          )}
+                          <p className="text-xs text-muted-foreground">
                             Criado em {format(new Date(usuario.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
                           </p>
                         </div>
@@ -329,15 +335,18 @@ export default function Usuarios() {
                         <div className="flex items-center gap-3">
                           <div>
                             <p className="font-medium flex items-center gap-2">
-                              {usuario.email}
+                              {usuario.nome || usuario.email}
                               {usuario.is_super_admin && (
                                 <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">
                                   Super Admin
                                 </span>
                               )}
                             </p>
-                            <p className="text-sm text-muted-foreground">
-                              {usuario.is_super_admin ? 'Administrador principal' : 'Secretária'}
+                            {usuario.nome && (
+                              <p className="text-sm text-muted-foreground">{usuario.email}</p>
+                            )}
+                            <p className="text-xs text-muted-foreground">
+                              {usuario.is_super_admin ? 'Administrador principal' : 'Usuário'}
                             </p>
                           </div>
                         </div>
@@ -398,14 +407,14 @@ export default function Usuarios() {
               <CardContent className="pt-6">
                 <h3 className="font-medium mb-3 flex items-center gap-2">
                   <span className="text-lg">📝</span>
-                  Como adicionar uma nova secretária
+                  Como adicionar um novo usuário
                 </h3>
                 <ol className="space-y-2 text-sm text-muted-foreground list-decimal list-inside">
-                  <li>A secretária acessa a página de login (<code className="bg-muted px-1.5 py-0.5 rounded">/login</code>)</li>
+                  <li>O usuário acessa a página de login (<code className="bg-muted px-1.5 py-0.5 rounded">/login</code>)</li>
                   <li>Clica em "Não tem conta? Criar uma"</li>
-                  <li>Preenche e-mail e senha</li>
+                  <li>Preenche nome, e-mail e senha</li>
                   <li>A conta aparece aqui em "Aguardando Aprovação"</li>
-                  <li>Você clica em "Aprovar" e ela terá acesso</li>
+                  <li>Você clica em "Aprovar" e o usuário terá acesso</li>
                 </ol>
               </CardContent>
             </Card>

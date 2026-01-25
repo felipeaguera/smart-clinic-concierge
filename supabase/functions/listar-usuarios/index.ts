@@ -113,13 +113,27 @@ serve(async (req) => {
       );
     }
 
+    // Buscar perfis (nomes) dos usuários
+    const { data: profiles, error: profilesError } = await supabaseAdmin
+      .from('profiles')
+      .select('id, nome');
+
+    if (profilesError) {
+      console.error('Erro ao buscar perfis:', profilesError);
+      // Não é fatal, continua sem os nomes
+    }
+
     // Mapear roles por user_id
     const rolesMap = new Map(roles?.map(r => [r.user_id, r.role]) || []);
+    
+    // Mapear nomes por user_id
+    const profilesMap = new Map(profiles?.map(p => [p.id, p.nome]) || []);
 
     // Formatar resposta
     const usuarios = authUsers.users.map(u => ({
       id: u.id,
       email: u.email,
+      nome: profilesMap.get(u.id) || null,
       created_at: u.created_at,
       role: rolesMap.get(u.id) || null,
       is_super_admin: u.email === SUPER_ADMIN_EMAIL,
