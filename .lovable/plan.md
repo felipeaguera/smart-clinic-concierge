@@ -1,120 +1,93 @@
 
 
-## Plano: Clara Valoriza o Médico Durante a Busca de Horários
+## Plano: Sincronização em Tempo Real para Múltiplas Secretárias
 
-### Objetivo
-Fazer a Clara mencionar as qualificações do médico de forma natural enquanto busca disponibilidade, usando informações já cadastradas no `prompt_ia`.
+### Problema
+Atualmente, quando a Secretária A marca um exame, a Secretária B não vê a alteração automaticamente. Isso pode causar conflitos de agendamento.
 
----
+### Solução: Supabase Realtime + Auto-invalidação
 
-### Alteração 1: Nova Seção no SYSTEM_PROMPT - Regra de Valorização
+#### 1. Habilitar Realtime na tabela `appointments`
 
-**Arquivo:** `supabase/functions/chat-atendimento/index.ts`
+Criar migration para ativar publicação realtime:
 
-**Localização:** Adicionar nova seção 10 após a seção 9 (REGRAS ESPECÍFICAS POR CATEGORIA)
-
-**Conteúdo:**
-```
-═══════════════════════════════════════
-10. VALORIZAÇÃO DO PROFISSIONAL
-═══════════════════════════════════════
-Quando identificar o médico para o exame/consulta, ANTES de listar os horários disponíveis:
-
-1. Verificar se o médico possui CREDENCIAIS no contexto (seção [CREDENCIAIS] das instruções do médico)
-2. Se houver informações sobre formação, especializações ou diferenciais:
-   - Mencionar de forma NATURAL e BREVE enquanto "busca" os horários
-   - Tom: Informativo, transmitir segurança SEM parecer promocional
-
-3. QUANDO usar:
-   - Primeira vez que menciona o médico na conversa
-   - Paciente demonstra insegurança
-
-4. QUANDO NÃO usar:
-   - Já mencionou na mesma conversa
-   - Conversa é apenas sobre orçamento
-   - Médico não tem credenciais cadastradas
-
-Exemplos de uso natural:
-- "Vou verificar a agenda do Dr. Felipe! Ele possui formação especializada em Medicina Fetal, com 3 pós-graduações 😊"
-- "O Dr. Klauber é referência em Ginecologia, com mais de 15 anos de experiência. Vamos ver os horários..."
+```sql
+ALTER PUBLICATION supabase_realtime ADD TABLE public.appointments;
 ```
 
----
+#### 2. Criar hook personalizado `useRealtimeAppointments`
 
-### Alteração 2: Ajustar Formato do Contexto do Médico
+Novo arquivo `src/hooks/useRealtimeAppointments.ts`:
 
-**Localização:** Linhas 630-639 (onde monta o contexto dos médicos)
+```typescript
+import { useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
 
-**Mudança:** Separar CREDENCIAIS de INSTRUÇÕES para a IA saber o que pode falar
+export function useRealtimeAppointments(doctorId: string, dateStr: string) {
+  const queryClient = useQueryClient();
 
-**De:**
-```javascript
-if (d.prompt_ia) {
-  info += `\n  ⚠️ INSTRUÇÕES OBRIGATÓRIAS PARA ESTE MÉDICO:\n  ${d.prompt_ia}`;
+  useEffect(() => {
+    if (!doctorId) return;
+
+    const channel = supabase
+      .channel(`appointments-${doctorId}-${dateStr}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*', // INSERT, UPDATE, DELETE
+          schema: 'public',
+          table: 'appointments',
+          filter: `doctor_id=eq.${doctorId}`,
+        },
+        (payload) => {
+          console.log('[Realtime] Appointment change detected:', payload);
+          // Invalidar cache para forcar refetch
+          queryClient.invalidateQueries({
+            queryKey: ['appointments', doctorId, dateStr],
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [doctorId, dateStr, queryClient]);
 }
 ```
 
-**Para:**
-```javascript
-if (d.prompt_ia) {
-  // Tentar separar credenciais de instruções
-  const hasCredenciais = d.prompt_ia.includes('[CREDENCIAIS]') || 
-                         d.prompt_ia.includes('formação') || 
-                         d.prompt_ia.includes('pós-graduação') ||
-                         d.prompt_ia.includes('especialização');
-  
-  info += `\n  ⚠️ INSTRUÇÕES OBRIGATÓRIAS (seguir com prioridade):\n  ${d.prompt_ia}`;
-  
-  if (hasCredenciais) {
-    info += `\n  💡 CREDENCIAIS (pode mencionar ao paciente de forma natural)`;
-  }
-}
+#### 3. Integrar no `Agendamentos.tsx`
+
+Adicionar o hook na página principal:
+
+```typescript
+import { useRealtimeAppointments } from '@/hooks/useRealtimeAppointments';
+
+// Dentro do componente, após as queries:
+useRealtimeAppointments(selectedDoctorId, format(selectedDate, 'yyyy-MM-dd'));
 ```
 
----
+#### 4. Feedback visual de sincronização (opcional)
 
-### Alteração 3: Sugerir Formato para o prompt_ia do Médico
+Adicionar indicador de "última atualização" no header da agenda para dar confiança às secretárias de que os dados estão sincronizados.
 
-Para facilitar a distinção, sugerir que o campo `prompt_ia` use marcadores:
+### Resultado Esperado
 
-**Formato Sugerido:**
-```
-[CREDENCIAIS]
-- 3 pós-graduações em Medicina Fetal
-- Mestrado pela USP
-- 15 anos de experiência
+| Ação | Comportamento |
+|------|---------------|
+| Secretária A marca um exame | Dados salvos no banco |
+| Secretária B vê a alteração? | **SIM** - atualiza automaticamente em 1-2 segundos |
 
-[INSTRUÇÕES]
-- Preferir horários pela manhã
-- Não agendar menos de 30 minutos entre consultas
-```
+### Arquivos a Modificar
 
-Isso permite que a IA:
-1. **CREDENCIAIS** → Pode mencionar ao paciente
-2. **INSTRUÇÕES** → Apenas para comportamento interno
+1. **Nova migration SQL** - Habilitar realtime
+2. **`src/hooks/useRealtimeAppointments.ts`** - Novo hook (criar)
+3. **`src/pages/admin/Agendamentos.tsx`** - Importar e usar o hook
 
----
+### Considerações de Performance
 
-### Fluxo Esperado
-
-| Etapa | O que acontece |
-|-------|----------------|
-| Paciente: "Quero ultrassom obstétrico" | Clara aplica desambiguação + upsell |
-| Paciente confirma exame | Clara identifica Dr. Felipe |
-| **NOVO** | Clara: "Vou verificar a agenda do Dr. Felipe! Ele possui formação especializada em Medicina Fetal, com 3 pós-graduações 😊" |
-| Clara busca horários | Apresenta opções disponíveis |
-
----
-
-### Arquivos Modificados
-
-| Arquivo | Alteração |
-|---------|-----------|
-| `supabase/functions/chat-atendimento/index.ts` | Nova seção 10 no SYSTEM_PROMPT + ajuste no contexto dos médicos |
-
----
-
-### Próximo Passo Opcional
-
-Depois de implementar, você pode atualizar o `prompt_ia` de cada médico no painel Admin → Médicos → Prompt IA para usar o formato com `[CREDENCIAIS]` e `[INSTRUÇÕES]`.
+- O canal realtime é filtrado por `doctor_id`, evitando tráfego desnecessário
+- Quando a secretária muda de médico/data, o canal antigo é desconectado e um novo é criado
+- O React Query só refaz a query quando recebe notificação, não fica fazendo polling
 
