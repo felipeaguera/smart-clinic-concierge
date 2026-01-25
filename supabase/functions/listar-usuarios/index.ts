@@ -24,28 +24,19 @@ serve(async (req) => {
       );
     }
 
-    // Criar cliente com token do usuário para verificar quem está chamando
-    const supabaseUser = createClient(
+    // Criar cliente admin para todas as operações
+    const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_ANON_KEY')!,
-      { global: { headers: { Authorization: authHeader } } }
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+      { auth: { autoRefreshToken: false, persistSession: false } }
     );
 
-    // Verificar claims do token
+    // Verificar o token do usuário
     const token = authHeader.replace('Bearer ', '');
-    const { data: claimsData, error: claimsError } = await supabaseUser.auth.getClaims(token);
-    
-    if (claimsError || !claimsData?.claims) {
-      return new Response(
-        JSON.stringify({ error: 'Token inválido' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Buscar email do usuário que está chamando
-    const { data: { user }, error: userError } = await supabaseUser.auth.getUser();
+    const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token);
     
     if (userError || !user) {
+      console.error('Erro ao verificar usuário:', userError);
       return new Response(
         JSON.stringify({ error: 'Usuário não encontrado' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -60,13 +51,43 @@ serve(async (req) => {
       );
     }
 
-    // Criar cliente admin para acessar auth.users
-    const supabaseAdmin = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-      { auth: { autoRefreshToken: false, persistSession: false } }
-    );
+    // DELETE - Remover usuário pendente
+    if (req.method === 'DELETE') {
+      const { userId } = await req.json();
+      
+      if (!userId) {
+        return new Response(
+          JSON.stringify({ error: 'ID do usuário é obrigatório' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
 
+      // Verificar se não é o super admin tentando se deletar
+      if (userId === user.id) {
+        return new Response(
+          JSON.stringify({ error: 'Você não pode remover sua própria conta' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Deletar o usuário do auth (também remove da user_roles por cascade)
+      const { error: deleteError } = await supabaseAdmin.auth.admin.deleteUser(userId);
+      
+      if (deleteError) {
+        console.error('Erro ao deletar usuário:', deleteError);
+        return new Response(
+          JSON.stringify({ error: 'Erro ao remover usuário' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      return new Response(
+        JSON.stringify({ success: true }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // GET - Listar usuários
     // Listar todos os usuários do auth
     const { data: authUsers, error: authError } = await supabaseAdmin.auth.admin.listUsers();
     

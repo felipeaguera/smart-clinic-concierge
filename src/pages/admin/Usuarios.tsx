@@ -123,6 +123,52 @@ export default function Usuarios() {
     },
   });
 
+  // Recusar/Deletar usuário pendente completamente
+  const recusarMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      const { data: sessionData } = await supabase.auth.getSession();
+      
+      if (!sessionData.session) {
+        throw new Error('Não autenticado');
+      }
+
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/listar-usuarios`,
+        {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${sessionData.session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ userId }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Erro ao recusar usuário');
+      }
+
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['usuarios'] });
+      toast({
+        title: 'Usuário removido',
+        description: 'A solicitação foi recusada e o usuário foi removido.',
+      });
+      setLoadingUserId(null);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Erro ao recusar',
+        description: error.message,
+        variant: 'destructive',
+      });
+      setLoadingUserId(null);
+    },
+  });
+
   const handleAprovar = (userId: string) => {
     setLoadingUserId(userId);
     aprovarMutation.mutate(userId);
@@ -131,6 +177,11 @@ export default function Usuarios() {
   const handleRemover = (userId: string) => {
     setLoadingUserId(userId);
     removerMutation.mutate(userId);
+  };
+
+  const handleRecusar = (userId: string) => {
+    setLoadingUserId(userId);
+    recusarMutation.mutate(userId);
   };
 
   if (error) {
@@ -191,20 +242,59 @@ export default function Usuarios() {
                             Criado em {format(new Date(usuario.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
                           </p>
                         </div>
-                        <Button
-                          onClick={() => handleAprovar(usuario.id)}
-                          disabled={loadingUserId === usuario.id}
-                          className="bg-emerald-600 hover:bg-emerald-700"
-                        >
-                          {loadingUserId === usuario.id ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <>
-                              <UserCheck className="h-4 w-4 mr-2" />
-                              Aprovar
-                            </>
-                          )}
-                        </Button>
+                        <div className="flex gap-2">
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                disabled={loadingUserId === usuario.id}
+                              >
+                                {loadingUserId === usuario.id && recusarMutation.isPending ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <>
+                                    <UserX className="h-4 w-4 mr-1" />
+                                    Recusar
+                                  </>
+                                )}
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Recusar solicitação?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  O usuário <strong>{usuario.email}</strong> será removido permanentemente do sistema.
+                                  Essa ação não pode ser desfeita.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => handleRecusar(usuario.id)}
+                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                >
+                                  Recusar e remover
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                          <Button
+                            onClick={() => handleAprovar(usuario.id)}
+                            disabled={loadingUserId === usuario.id}
+                            className="bg-primary hover:bg-primary/90"
+                          >
+                            {loadingUserId === usuario.id && aprovarMutation.isPending ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <>
+                                <UserCheck className="h-4 w-4 mr-2" />
+                                Aprovar
+                              </>
+                            )}
+                          </Button>
+                        </div>
                       </div>
                     ))}
                   </div>
