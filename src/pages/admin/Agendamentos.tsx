@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { useRealtimeAppointments } from '@/hooks/useRealtimeAppointments';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -203,6 +204,9 @@ export default function Agendamentos() {
     },
     enabled: !!selectedDoctorId,
   });
+
+  // Realtime subscription para sincronização entre secretárias
+  useRealtimeAppointments(selectedDoctorId, format(selectedDate, 'yyyy-MM-dd'));
 
   // Filter doctors based on type (includes doctors with rules OR schedule_openings)
   const filteredDoctors = useMemo(() => {
