@@ -1,6 +1,9 @@
+import { useState, useEffect, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Users, FileText, Calendar, LogOut, UserCog } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
 import {
   Sidebar,
   SidebarContent,
@@ -15,6 +18,7 @@ import {
 } from '@/components/ui/sidebar';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
+import logoImage from '@/assets/logo-pilarmed-full.png';
 
 const SUPER_ADMIN_EMAIL = 'felipe_aguera@hotmail.com';
 
@@ -24,9 +28,65 @@ const baseMenuItems = [
   { title: 'Agendamentos', url: '/admin/agendamentos', icon: Calendar },
 ];
 
+// Frases motivacionais sobre medicina
+const frasesMotivacionais = [
+  "Cuidar de pessoas é a mais nobre das missões.",
+  "Cada paciente atendido é uma vida transformada.",
+  "A medicina é a arte de curar com ciência e coração.",
+  "Seu trabalho hoje faz diferença na vida de alguém.",
+  "Atrás de cada consulta, há uma história que merece atenção.",
+  "A saúde começa com um atendimento humano e dedicado.",
+  "Você é parte essencial da jornada de cuidado dos pacientes.",
+  "Pequenos gestos de acolhimento salvam vidas.",
+  "A excelência no atendimento começa com você.",
+  "Cada dia é uma nova oportunidade de fazer o bem.",
+  "O cuidado genuíno transforma a experiência do paciente.",
+  "Sua dedicação inspira confiança e esperança.",
+  "Na medicina, cada detalhe importa.",
+  "Juntos, construímos saúde e bem-estar.",
+  "O acolhimento é o primeiro passo da cura.",
+];
+
+// Retorna saudação baseada na hora do dia
+const getSaudacao = () => {
+  const hora = new Date().getHours();
+  if (hora < 12) return 'Bom dia';
+  if (hora < 18) return 'Boa tarde';
+  return 'Boa noite';
+};
+
 export function AdminSidebar() {
   const location = useLocation();
   const { signOut, user } = useAuth();
+  
+  // Frase aleatória mantida durante a sessão
+  const fraseMotivacional = useMemo(() => {
+    return frasesMotivacionais[Math.floor(Math.random() * frasesMotivacionais.length)];
+  }, []);
+
+  // Buscar nome do perfil
+  const { data: profile } = useQuery({
+    queryKey: ['profile', user?.id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('profiles')
+        .select('nome')
+        .eq('id', user?.id)
+        .maybeSingle();
+      return data;
+    },
+    enabled: !!user?.id,
+    staleTime: 1000 * 60 * 5, // 5 minutos
+  });
+
+  // Extrai primeiro nome ou usa parte do email
+  const primeiroNome = profile?.nome?.split(' ')[0] 
+    || user?.email?.split('@')[0]?.split('.')[0];
+
+  // Capitaliza primeira letra
+  const nomeFormatado = primeiroNome 
+    ? primeiroNome.charAt(0).toUpperCase() + primeiroNome.slice(1).toLowerCase()
+    : '';
   
   // Verificar se é o Super Admin
   const isSuperAdmin = user?.email === SUPER_ADMIN_EMAIL;
@@ -35,16 +95,28 @@ export function AdminSidebar() {
   const menuItems = isSuperAdmin 
     ? [...baseMenuItems, { title: 'Usuários', url: '/admin/usuarios', icon: UserCog }]
     : baseMenuItems;
+
   return (
     <Sidebar className="border-r border-sidebar-border">
       <SidebarHeader className="p-4">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-sidebar-primary">
-            <span className="text-lg font-bold text-sidebar-primary-foreground">C</span>
+        <div className="flex flex-col gap-4">
+          {/* Logo Pilar Med */}
+          <div className="flex items-center justify-center py-2">
+            <img 
+              src={logoImage} 
+              alt="Pilar Med - Medicina Especializada" 
+              className="h-10 w-auto"
+            />
           </div>
-          <div>
-            <h2 className="text-sm font-semibold text-sidebar-foreground">Clínica Admin</h2>
-            <p className="text-xs text-sidebar-foreground/60">Painel de Controle</p>
+          
+          {/* Saudação e Frase Motivacional */}
+          <div className="bg-sidebar-accent/50 rounded-lg p-3">
+            <p className="text-sm font-medium text-sidebar-foreground">
+              {getSaudacao()}, {nomeFormatado}! 👋
+            </p>
+            <p className="text-xs text-sidebar-foreground/70 mt-1 italic leading-relaxed">
+              "{fraseMotivacional}"
+            </p>
           </div>
         </div>
       </SidebarHeader>
