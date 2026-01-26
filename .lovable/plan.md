@@ -1,93 +1,55 @@
 
 
-## Plano: Sincronização em Tempo Real para Múltiplas Secretárias
+## Plano: Configurar Login como Página Inicial + Domínio Próprio
 
-### Problema
-Atualmente, quando a Secretária A marca um exame, a Secretária B não vê a alteração automaticamente. Isso pode causar conflitos de agendamento.
+### 1. Alterar Rotas no App.tsx
 
-### Solução: Supabase Realtime + Auto-invalidação
+Inverter as rotas para que o login seja a página inicial:
 
-#### 1. Habilitar Realtime na tabela `appointments`
-
-Criar migration para ativar publicação realtime:
-
-```sql
-ALTER PUBLICATION supabase_realtime ADD TABLE public.appointments;
+```tsx
+// src/App.tsx - Mudanças nas rotas
+<Routes>
+  {/* Página inicial agora é o Login */}
+  <Route path="/" element={<Login />} />
+  
+  {/* Chat de testes movido para /atendimento */}
+  <Route path="/atendimento" element={<Atendimento />} />
+  
+  {/* Redirecionar /login antigo para a raiz */}
+  <Route path="/login" element={<Navigate to="/" replace />} />
+  
+  {/* ... resto das rotas admin permanecem iguais */}
+</Routes>
 ```
 
-#### 2. Criar hook personalizado `useRealtimeAppointments`
+### 2. Ajustar Redirecionamento no Login.tsx
 
-Novo arquivo `src/hooks/useRealtimeAppointments.ts`:
+Atualizar o `useEffect` que redireciona admins após login:
 
-```typescript
-import { useEffect } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
-
-export function useRealtimeAppointments(doctorId: string, dateStr: string) {
-  const queryClient = useQueryClient();
-
-  useEffect(() => {
-    if (!doctorId) return;
-
-    const channel = supabase
-      .channel(`appointments-${doctorId}-${dateStr}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*', // INSERT, UPDATE, DELETE
-          schema: 'public',
-          table: 'appointments',
-          filter: `doctor_id=eq.${doctorId}`,
-        },
-        (payload) => {
-          console.log('[Realtime] Appointment change detected:', payload);
-          // Invalidar cache para forcar refetch
-          queryClient.invalidateQueries({
-            queryKey: ['appointments', doctorId, dateStr],
-          });
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [doctorId, dateStr, queryClient]);
-}
+```tsx
+// Redirecionar para /admin/medicos após login bem-sucedido
+// (já está assim, não precisa mudar)
 ```
 
-#### 3. Integrar no `Agendamentos.tsx`
+### 3. Conectar Domínio Próprio
 
-Adicionar o hook na página principal:
+Após publicar, você vai em:
+- **Configurações do Projeto** → **Domains** → **Connect Domain**
+- Adicionar seu domínio (ex: `seudominio.com.br`)
+- Configurar os registros DNS no seu provedor:
+  - **A Record**: `@` → `185.158.133.1`
+  - **A Record**: `www` → `185.158.133.1`
+  - **TXT Record**: `_lovable` → (valor fornecido pelo Lovable)
 
-```typescript
-import { useRealtimeAppointments } from '@/hooks/useRealtimeAppointments';
+### Resultado Final
 
-// Dentro do componente, após as queries:
-useRealtimeAppointments(selectedDoctorId, format(selectedDate, 'yyyy-MM-dd'));
-```
-
-#### 4. Feedback visual de sincronização (opcional)
-
-Adicionar indicador de "última atualização" no header da agenda para dar confiança às secretárias de que os dados estão sincronizados.
-
-### Resultado Esperado
-
-| Ação | Comportamento |
-|------|---------------|
-| Secretária A marca um exame | Dados salvos no banco |
-| Secretária B vê a alteração? | **SIM** - atualiza automaticamente em 1-2 segundos |
+| URL | O que aparece |
+|-----|---------------|
+| `seudominio.com.br` | Tela de login com a Clara |
+| `seudominio.com.br/atendimento` | Chat para testar a IA |
+| `seudominio.com.br/admin/...` | Painel administrativo (após login) |
 
 ### Arquivos a Modificar
 
-1. **Nova migration SQL** - Habilitar realtime
-2. **`src/hooks/useRealtimeAppointments.ts`** - Novo hook (criar)
-3. **`src/pages/admin/Agendamentos.tsx`** - Importar e usar o hook
-
-### Considerações de Performance
-
-- O canal realtime é filtrado por `doctor_id`, evitando tráfego desnecessário
-- Quando a secretária muda de médico/data, o canal antigo é desconectado e um novo é criado
-- O React Query só refaz a query quando recebe notificação, não fica fazendo polling
+1. **`src/App.tsx`** - Reorganizar rotas
 
