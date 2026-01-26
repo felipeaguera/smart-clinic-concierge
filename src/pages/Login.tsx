@@ -10,7 +10,6 @@ import { Loader2, ArrowRight } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import logoImage from '@/assets/logo-pilarmed.png';
 import claraIcon from '@/assets/clara-icon.png';
-
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -18,9 +17,17 @@ export default function Login() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSignUp, setIsSignUp] = useState(false);
   const [showForm, setShowForm] = useState(false);
-  const { signIn, signUp, user, isAdmin, isLoading } = useAuth();
+  const {
+    signIn,
+    signUp,
+    user,
+    isAdmin,
+    isLoading
+  } = useAuth();
   const navigate = useNavigate();
-  const { toast } = useToast();
+  const {
+    toast
+  } = useToast();
 
   // Redirecionar automaticamente se já estiver logado como admin
   useEffect(() => {
@@ -28,51 +35,46 @@ export default function Login() {
       navigate('/admin/medicos');
     }
   }, [user, isAdmin, isLoading, navigate]);
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
     if (!email.trim() || !password.trim()) {
       toast({
         title: 'Erro',
         description: 'Preencha todos os campos',
-        variant: 'destructive',
+        variant: 'destructive'
       });
       return;
     }
-
     if (isSignUp && !nome.trim()) {
       toast({
         title: 'Erro',
         description: 'Preencha seu nome completo',
-        variant: 'destructive',
+        variant: 'destructive'
       });
       return;
     }
-
     setIsSubmitting(true);
-
     try {
       if (isSignUp) {
-        const { data, error } = await signUp(email, password);
-
+        const {
+          data,
+          error
+        } = await signUp(email, password);
         if (error) {
           toast({
             title: 'Erro',
             description: error.message,
-            variant: 'destructive',
+            variant: 'destructive'
           });
           setIsSubmitting(false);
         } else if (data?.user) {
           // Atualizar o perfil com o nome
-          await supabase
-            .from('profiles')
-            .update({ nome: nome.trim() })
-            .eq('id', data.user.id);
-
+          await supabase.from('profiles').update({
+            nome: nome.trim()
+          }).eq('id', data.user.id);
           toast({
             title: 'Conta criada!',
-            description: 'Solicite ao administrador para ativar seu acesso.',
+            description: 'Solicite ao administrador para ativar seu acesso.'
           });
           setIsSubmitting(false);
           setNome('');
@@ -81,13 +83,14 @@ export default function Login() {
           setIsSignUp(false);
         }
       } else {
-        const { error } = await signIn(email, password);
-
+        const {
+          error
+        } = await signIn(email, password);
         if (error) {
           toast({
             title: 'Erro',
             description: error.message,
-            variant: 'destructive',
+            variant: 'destructive'
           });
           setIsSubmitting(false);
         }
@@ -97,9 +100,7 @@ export default function Login() {
       setIsSubmitting(false);
     }
   };
-
-  return (
-    <div className="min-h-screen flex flex-col bg-gradient-to-br from-[#f8faf9] via-white to-[#f0f7f4]">
+  return <div className="min-h-screen flex flex-col bg-gradient-to-br from-[#f8faf9] via-white to-[#f0f7f4]">
       {/* Header com logo */}
       <header className="w-full p-6">
         <img src={logoImage} alt="Pilar Med" className="h-10 w-auto" />
@@ -110,16 +111,11 @@ export default function Login() {
         <div className="w-full max-w-md space-y-8">
           
           {/* Introdução Clara */}
-          {!showForm ? (
-            <div className="text-center space-y-8 animate-fade-in">
+          {!showForm ? <div className="text-center space-y-8 animate-fade-in">
               {/* Avatar Clara */}
               <div className="relative mx-auto w-24 h-24">
                 <div className="absolute inset-0 bg-gradient-to-br from-[#1a5c4b] to-[#2d8a6e] rounded-full animate-pulse opacity-20" />
-                <img 
-                  src={claraIcon} 
-                  alt="Clara - Assistente de IA" 
-                  className="relative w-full h-full rounded-full object-cover shadow-lg"
-                />
+                <img alt="Clara - Assistente de IA" className="relative w-full h-full rounded-full object-cover shadow-lg" src="/lovable-uploads/9594933e-f3fa-4850-a5af-57798e4a8ced.png" />
               </div>
 
               {/* Texto de boas-vindas */}
@@ -136,85 +132,44 @@ export default function Login() {
               </div>
 
               {/* Botão de acesso */}
-              <Button 
-                onClick={() => setShowForm(true)}
-                className="w-full max-w-xs mx-auto h-12 text-base font-medium bg-[#1a5c4b] hover:bg-[#154a3d] text-white shadow-lg shadow-[#1a5c4b]/20 transition-all duration-300 hover:shadow-xl hover:shadow-[#1a5c4b]/30"
-              >
+              <Button onClick={() => setShowForm(true)} className="w-full max-w-xs mx-auto h-12 text-base font-medium bg-[#1a5c4b] hover:bg-[#154a3d] text-white shadow-lg shadow-[#1a5c4b]/20 transition-all duration-300 hover:shadow-xl hover:shadow-[#1a5c4b]/30">
                 Acessar Painel
                 <ArrowRight className="ml-2 h-5 w-5" />
               </Button>
-            </div>
-          ) : (
-            /* Formulário de Login */
-            <Card className="border-0 shadow-xl shadow-black/5 animate-fade-in">
+            </div> : (/* Formulário de Login */
+        <Card className="border-0 shadow-xl shadow-black/5 animate-fade-in">
               <CardContent className="pt-8 pb-6 px-8">
                 {/* Header do form */}
                 <div className="text-center mb-8">
-                  <img 
-                    src={claraIcon} 
-                    alt="Clara" 
-                    className="mx-auto w-14 h-14 rounded-full object-cover mb-4 shadow-lg"
-                  />
+                  <img src={claraIcon} alt="Clara" className="mx-auto w-14 h-14 rounded-full object-cover mb-4 shadow-lg" />
                   <h2 className="text-xl font-semibold text-foreground">
                     {isSignUp ? 'Criar nova conta' : 'Bem-vindo de volta!'}
                   </h2>
                   <p className="text-sm text-muted-foreground mt-1">
-                    {isSignUp 
-                      ? 'Preencha os dados para solicitar acesso' 
-                      : 'Entre com suas credenciais'}
+                    {isSignUp ? 'Preencha os dados para solicitar acesso' : 'Entre com suas credenciais'}
                   </p>
                 </div>
 
                 <form onSubmit={handleSubmit} className="space-y-5">
-                  {isSignUp && (
-                    <div className="space-y-2">
+                  {isSignUp && <div className="space-y-2">
                       <Label htmlFor="nome" className="text-sm font-medium">
                         Nome completo
                       </Label>
-                      <Input
-                        id="nome"
-                        type="text"
-                        placeholder="Seu nome completo"
-                        value={nome}
-                        onChange={(e) => setNome(e.target.value)}
-                        disabled={isSubmitting}
-                        className="h-11 bg-muted/50 border-0 focus-visible:ring-[#1a5c4b]"
-                      />
-                    </div>
-                  )}
+                      <Input id="nome" type="text" placeholder="Seu nome completo" value={nome} onChange={e => setNome(e.target.value)} disabled={isSubmitting} className="h-11 bg-muted/50 border-0 focus-visible:ring-[#1a5c4b]" />
+                    </div>}
                   <div className="space-y-2">
                     <Label htmlFor="email" className="text-sm font-medium">
                       E-mail
                     </Label>
-                    <Input
-                      id="email"
-                      type="email"
-                      placeholder="seu@email.com"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      disabled={isSubmitting}
-                      className="h-11 bg-muted/50 border-0 focus-visible:ring-[#1a5c4b]"
-                    />
+                    <Input id="email" type="email" placeholder="seu@email.com" value={email} onChange={e => setEmail(e.target.value)} disabled={isSubmitting} className="h-11 bg-muted/50 border-0 focus-visible:ring-[#1a5c4b]" />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="password" className="text-sm font-medium">
                       Senha
                     </Label>
-                    <Input
-                      id="password"
-                      type="password"
-                      placeholder="••••••••"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      disabled={isSubmitting}
-                      className="h-11 bg-muted/50 border-0 focus-visible:ring-[#1a5c4b]"
-                    />
+                    <Input id="password" type="password" placeholder="••••••••" value={password} onChange={e => setPassword(e.target.value)} disabled={isSubmitting} className="h-11 bg-muted/50 border-0 focus-visible:ring-[#1a5c4b]" />
                   </div>
-                  <Button 
-                    type="submit" 
-                    className="w-full h-11 text-base font-medium bg-[#1a5c4b] hover:bg-[#154a3d] text-white mt-2" 
-                    disabled={isSubmitting || isLoading}
-                  >
+                  <Button type="submit" className="w-full h-11 text-base font-medium bg-[#1a5c4b] hover:bg-[#154a3d] text-white mt-2" disabled={isSubmitting || isLoading}>
                     {(isSubmitting || isLoading) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                     {isSignUp ? 'Solicitar acesso' : 'Entrar'}
                   </Button>
@@ -231,29 +186,16 @@ export default function Login() {
                 </div>
 
                 {/* Toggle login/signup */}
-                <button
-                  type="button"
-                  onClick={() => setIsSignUp(!isSignUp)}
-                  className="w-full text-center text-sm text-muted-foreground hover:text-[#1a5c4b] transition-colors"
-                >
-                  {isSignUp ? (
-                    <>Já tem conta? <span className="font-medium text-[#1a5c4b]">Fazer login</span></>
-                  ) : (
-                    <>Não tem conta? <span className="font-medium text-[#1a5c4b]">Criar uma</span></>
-                  )}
+                <button type="button" onClick={() => setIsSignUp(!isSignUp)} className="w-full text-center text-sm text-muted-foreground hover:text-[#1a5c4b] transition-colors">
+                  {isSignUp ? <>Já tem conta? <span className="font-medium text-[#1a5c4b]">Fazer login</span></> : <>Não tem conta? <span className="font-medium text-[#1a5c4b]">Criar uma</span></>}
                 </button>
 
                 {/* Voltar */}
-                <button
-                  type="button"
-                  onClick={() => setShowForm(false)}
-                  className="w-full text-center text-xs text-muted-foreground/60 hover:text-muted-foreground mt-4 transition-colors"
-                >
+                <button type="button" onClick={() => setShowForm(false)} className="w-full text-center text-xs text-muted-foreground/60 hover:text-muted-foreground mt-4 transition-colors">
                   ← Voltar ao início
                 </button>
               </CardContent>
-            </Card>
-          )}
+            </Card>)}
         </div>
       </main>
 
@@ -263,6 +205,5 @@ export default function Login() {
           © {new Date().getFullYear()} Pilar Med — Medicina Especializada
         </p>
       </footer>
-    </div>
-  );
+    </div>;
 }
