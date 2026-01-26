@@ -8,8 +8,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, ArrowRight } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
-import logoImage from '@/assets/logo-pilarmed.png';
 import claraIcon from '@/assets/clara-icon.png';
+import atendenteImage from '@/assets/atendente-pilarmed.png';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -100,9 +100,9 @@ export default function Login() {
 
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-br from-[#f8faf9] via-white to-[#f0f7f4]">
-      {/* Header com logo */}
+      {/* Header com foto da atendente */}
       <header className="w-full p-6">
-        <img src={logoImage} alt="Pilar Med" className="h-10 w-auto" />
+        <img src={atendenteImage} alt="Atendente Pilar Med" className="h-16 w-auto rounded-full object-cover shadow-md" />
       </header>
 
       {/* Conteúdo principal */}
