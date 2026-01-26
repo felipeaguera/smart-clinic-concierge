@@ -6,9 +6,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Sparkles, ArrowRight } from 'lucide-react';
+import { Loader2, ArrowRight } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import logoImage from '@/assets/logo-pilarmed.png';
+import claraIcon from '@/assets/clara-icon.png';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -114,9 +115,11 @@ export default function Login() {
               {/* Avatar Clara */}
               <div className="relative mx-auto w-24 h-24">
                 <div className="absolute inset-0 bg-gradient-to-br from-[#1a5c4b] to-[#2d8a6e] rounded-full animate-pulse opacity-20" />
-                <div className="relative w-full h-full bg-gradient-to-br from-[#1a5c4b] to-[#2d8a6e] rounded-full flex items-center justify-center shadow-lg">
-                  <Sparkles className="w-10 h-10 text-white" />
-                </div>
+                <img 
+                  src={claraIcon} 
+                  alt="Clara - Assistente de IA" 
+                  className="relative w-full h-full rounded-full object-cover shadow-lg"
+                />
               </div>
 
               {/* Texto de boas-vindas */}
@@ -147,9 +150,11 @@ export default function Login() {
               <CardContent className="pt-8 pb-6 px-8">
                 {/* Header do form */}
                 <div className="text-center mb-8">
-                  <div className="mx-auto w-14 h-14 bg-gradient-to-br from-[#1a5c4b] to-[#2d8a6e] rounded-full flex items-center justify-center mb-4 shadow-lg">
-                    <Sparkles className="w-7 h-7 text-white" />
-                  </div>
+                  <img 
+                    src={claraIcon} 
+                    alt="Clara" 
+                    className="mx-auto w-14 h-14 rounded-full object-cover mb-4 shadow-lg"
+                  />
                   <h2 className="text-xl font-semibold text-foreground">
                     {isSignUp ? 'Criar nova conta' : 'Bem-vindo de volta!'}
                   </h2>
