@@ -113,7 +113,7 @@ export default function Login() {
           {/* Introdução Clara */}
           {!showForm ? <div className="text-center space-y-8 animate-fade-in">
               {/* Avatar Clara */}
-              <div className="relative mx-auto w-36 h-36">
+              <div className="relative mx-auto w-48 h-48">
                 <div className="absolute inset-0 bg-gradient-to-br from-[#1a5c4b] to-[#2d8a6e] rounded-full animate-pulse opacity-20" />
                 <img alt="Clara - Assistente de IA" className="relative w-full h-full rounded-full object-cover shadow-lg" src="/lovable-uploads/9594933e-f3fa-4850-a5af-57798e4a8ced.png" />
               </div>
