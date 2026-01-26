@@ -430,7 +430,12 @@ export default function TiposExame() {
 
       {/* Modal de Novo/Editar */}
       <Dialog open={isOpen} onOpenChange={setIsOpen}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto">
+        <DialogContent
+          className="max-h-[90vh] overflow-y-auto"
+          // Evita o modal fechar ao trocar de janela (blur/focus fora do documento)
+          onFocusOutside={(e) => e.preventDefault()}
+          onInteractOutside={(e) => e.preventDefault()}
+        >
           <DialogHeader>
             <DialogTitle>{editingExam ? 'Editar' : 'Novo'} {getCategoriaLabel(categoria)}</DialogTitle>
           </DialogHeader>
