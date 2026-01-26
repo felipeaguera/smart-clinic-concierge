@@ -1,55 +1,41 @@
 
 
-## Plano: Configurar Login como Página Inicial + Domínio Próprio
+## Plano: Desabilitar refetchOnWindowFocus no React Query
 
-### 1. Alterar Rotas no App.tsx
+### Objetivo
 
-Inverter as rotas para que o login seja a página inicial:
+Corrigir o comportamento indesejado onde modais fecham e formulários perdem dados ao trocar de janela, sem afetar a sincronização em tempo real entre múltiplos usuários.
 
-```tsx
-// src/App.tsx - Mudanças nas rotas
-<Routes>
-  {/* Página inicial agora é o Login */}
-  <Route path="/" element={<Login />} />
-  
-  {/* Chat de testes movido para /atendimento */}
-  <Route path="/atendimento" element={<Atendimento />} />
-  
-  {/* Redirecionar /login antigo para a raiz */}
-  <Route path="/login" element={<Navigate to="/" replace />} />
-  
-  {/* ... resto das rotas admin permanecem iguais */}
-</Routes>
-```
+### Alteração
 
-### 2. Ajustar Redirecionamento no Login.tsx
+**Arquivo: `src/App.tsx`**
 
-Atualizar o `useEffect` que redireciona admins após login:
+Atualizar a configuração do QueryClient:
 
 ```tsx
-// Redirecionar para /admin/medicos após login bem-sucedido
-// (já está assim, não precisa mudar)
+// ANTES
+const queryClient = new QueryClient();
+
+// DEPOIS
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      refetchOnWindowFocus: false,
+      staleTime: 1000 * 60 * 5, // 5 minutos
+    },
+  },
+});
 ```
 
-### 3. Conectar Domínio Próprio
+### O que muda
 
-Após publicar, você vai em:
-- **Configurações do Projeto** → **Domains** → **Connect Domain**
-- Adicionar seu domínio (ex: `seudominio.com.br`)
-- Configurar os registros DNS no seu provedor:
-  - **A Record**: `@` → `185.158.133.1`
-  - **A Record**: `www` → `185.158.133.1`
-  - **TXT Record**: `_lovable` → (valor fornecido pelo Lovable)
+| Comportamento | Antes | Depois |
+|---------------|-------|--------|
+| Trocar de janela e voltar | Refetch automático, modais fecham | Nada acontece, modais permanecem |
+| Novo agendamento por outro usuário | Atualiza via Realtime | Continua atualizando via Realtime |
+| Dados em cache | Sempre "stale" | Frescos por 5 minutos |
 
-### Resultado Final
+### Sincronização Realtime (não afetada)
 
-| URL | O que aparece |
-|-----|---------------|
-| `seudominio.com.br` | Tela de login com a Clara |
-| `seudominio.com.br/atendimento` | Chat para testar a IA |
-| `seudominio.com.br/admin/...` | Painel administrativo (após login) |
-
-### Arquivos a Modificar
-
-1. **`src/App.tsx`** - Reorganizar rotas
+O hook `useRealtimeAppointments` já implementado continuará funcionando normalmente via WebSocket, garantindo que múltiplos usuários vejam atualizações em tempo real.
 
