@@ -189,6 +189,36 @@ export type Database = {
           },
         ]
       }
+      human_handoff_queue: {
+        Row: {
+          created_at: string
+          id: string
+          patient_name: string | null
+          phone: string
+          resolved_at: string | null
+          resolved_by: string | null
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          patient_name?: string | null
+          phone: string
+          resolved_at?: string | null
+          resolved_by?: string | null
+          status?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          patient_name?: string | null
+          phone?: string
+          resolved_at?: string | null
+          resolved_by?: string | null
+          status?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           created_at: string | null
@@ -298,6 +328,60 @@ export type Database = {
           id?: string
           role?: Database["public"]["Enums"]["app_role"]
           user_id?: string
+        }
+        Relationships: []
+      }
+      whatsapp_config: {
+        Row: {
+          id: string
+          is_connected: boolean
+          last_check: string | null
+          qr_code_base64: string | null
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          is_connected?: boolean
+          last_check?: string | null
+          qr_code_base64?: string | null
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          is_connected?: boolean
+          last_check?: string | null
+          qr_code_base64?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      whatsapp_messages: {
+        Row: {
+          content: string
+          created_at: string
+          direction: string
+          expires_at: string
+          id: string
+          phone: string
+          provider_message_id: string | null
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          direction: string
+          expires_at?: string
+          id?: string
+          phone: string
+          provider_message_id?: string | null
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          direction?: string
+          expires_at?: string
+          id?: string
+          phone?: string
+          provider_message_id?: string | null
         }
         Relationships: []
       }

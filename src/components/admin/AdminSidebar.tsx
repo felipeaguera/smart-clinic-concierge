@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useLocation } from "react-router-dom";
-import { Users, FileText, Calendar, LogOut, UserCog } from "lucide-react";
+import { Users, FileText, Calendar, LogOut, UserCog, Plug } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -17,7 +17,9 @@ import {
   SidebarFooter,
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/hooks/useAuth";
+import { useRealtimeHandoffs } from "@/hooks/useRealtimeHandoffs";
 import logoImage from "@/assets/logo-pilarmed-full.png";
 
 const SUPER_ADMIN_EMAIL = "felipe_aguera@hotmail.com";
@@ -26,6 +28,7 @@ const baseMenuItems = [
   { title: "Médicos", url: "/admin/medicos", icon: Users },
   { title: "Serviços", url: "/admin/exames", icon: FileText },
   { title: "Agendamentos", url: "/admin/agendamentos", icon: Calendar },
+  { title: "Integração", url: "/admin/integracao", icon: Plug },
 ];
 
 // Frases motivacionais sobre medicina
@@ -158,6 +161,7 @@ const getSaudacao = () => {
 export function AdminSidebar() {
   const location = useLocation();
   const { signOut, user } = useAuth();
+  const { pendingCount } = useRealtimeHandoffs();
 
   // Frase aleatória mantida durante a sessão
   const fraseMotivacional = useMemo(() => {
@@ -225,6 +229,11 @@ export function AdminSidebar() {
                     >
                       <item.icon className="h-4 w-4" />
                       <span>{item.title}</span>
+                      {item.title === "Integração" && pendingCount > 0 && (
+                        <Badge variant="destructive" className="ml-auto h-5 min-w-5 px-1.5 text-xs">
+                          {pendingCount}
+                        </Badge>
+                      )}
                     </NavLink>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
