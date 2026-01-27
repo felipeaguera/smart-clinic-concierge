@@ -1,297 +1,107 @@
 
 
-## Plano: Integração WhatsApp via Z-API - MVP Completo
+## Plano: Corrigir Geração do QR Code Z-API
 
-### Visão Geral
+### Problema Identificado
 
-Implementar a integração do WhatsApp conectando a IA Clara já existente ao canal WhatsApp. Inclui:
-- Novo item "Integração" no menu lateral visível para TODOS os usuários
-- Badge vermelho no menu quando há atendimentos pendentes
-- Página com duas abas: "WhatsApp" (QR/status) e "Atendimentos Pendentes" (handoffs)
-- Edge Functions para webhook e verificação de status
+A Edge Function `zapi-status` atual usa apenas o endpoint `/qr-code/image`, que retorna o QR Code apenas se a sessão já foi iniciada. Para gerar um novo QR Code, é necessário **chamar ativamente** o endpoint `/connect` da Z-API.
+
+**Confirmação dos Secrets**:
+Sim, os secrets estão configurados corretamente conforme a imagem:
+- **ZAPI_INSTANCE_ID**: `3EDDF0215D68C15FC4920203B614D70E`
+- **ZAPI_TOKEN**: `AC8BC988CE25D949C131BD67`
 
 ---
 
-### Arquitetura do Fluxo
+### Solução
+
+Modificar a Edge Function `zapi-status` para seguir o fluxo correto da Z-API:
 
 ```text
-WhatsApp → Z-API → zapi-webhook (Edge Function)
-                         │
-                         ├─ 1. Autenticar via ZAPI_CLIENT_TOKEN
-                         ├─ 2. Ignorar msg antiga (>2min OU isOld/isFromHistory)
-                         ├─ 3. Deduplicar via provider_message_id
-                         ├─ 4. Verificar handoff_status = 'open' para o telefone
-                         │       └─ Se open → salvar msg mas NÃO processar IA
-                         │
-                         ├─ 5. Salvar msg em whatsapp_messages (TTL 24h)
-                         ├─ 6. Carregar últimas 15 msgs do telefone para contexto
-                         ├─ 7. Chamar chat-atendimento (Clara) passando contexto
-                         │
-                         ├─ 8a. humanHandoff = true?
-                         │       └─ Inserir human_handoff_queue (open)
-                         │       └─ NÃO enviar resposta via Z-API
-                         │
-                         └─ 8b. humanHandoff = false
-                                 └─ Enviar resposta via Z-API
-                                 └─ Salvar outbound em whatsapp_messages
+1. Chamar GET /status → verificar se connected
+2. Se NÃO connected:
+   a. Chamar GET /connect → iniciar sessão e obter QR
+   b. Retornar o QR Code recebido
+3. Se connected:
+   a. Retornar { connected: true }
 ```
 
 ---
 
-### 1. Banco de Dados (Migrations)
+### Mudanças Técnicas
 
-#### Tabela: `whatsapp_messages`
+#### Arquivo: `supabase/functions/zapi-status/index.ts`
 
-Armazena mensagens para contexto da IA com TTL de 24 horas.
-
-| Coluna               | Tipo        | Descrição                                |
-|----------------------|-------------|------------------------------------------|
-| id                   | uuid        | PK, gen_random_uuid()                    |
-| phone                | text        | Telefone (+5511999999999)                |
-| provider_message_id  | text        | ID único da Z-API (UNIQUE, idempotência) |
-| direction            | text        | 'inbound' ou 'outbound'                  |
-| content              | text        | Texto da mensagem                        |
-| created_at           | timestamptz | now()                                    |
-| expires_at           | timestamptz | now() + interval '24 hours'              |
-
-**RLS**: Apenas service_role (webhook). Admins podem SELECT para debug.
-
-#### Tabela: `human_handoff_queue`
-
-Fila de atendimentos aguardando humano.
-
-| Coluna        | Tipo        | Descrição                              |
-|---------------|-------------|----------------------------------------|
-| id            | uuid        | PK, gen_random_uuid()                  |
-| phone         | text        | Telefone do paciente                   |
-| patient_name  | text        | Nome do paciente (se disponível)       |
-| status        | text        | 'open' ou 'resolved' (default: 'open') |
-| created_at    | timestamptz | now()                                  |
-| resolved_at   | timestamptz | null                                   |
-| resolved_by   | uuid        | FK para auth.users (quem resolveu)     |
-
-**RLS**: Admins podem SELECT e UPDATE (para resolver).
-
-**Realtime**: Habilitar para atualizações instantâneas do badge.
-
-#### Tabela: `whatsapp_config`
-
-Armazena configuração e status da conexão Z-API.
-
-| Coluna          | Tipo        | Descrição                     |
-|-----------------|-------------|-------------------------------|
-| id              | uuid        | PK, gen_random_uuid()         |
-| is_connected    | boolean     | Status atual                  |
-| last_check      | timestamptz | Último polling                |
-| qr_code_base64  | text        | QR atual (se desconectado)    |
-| updated_at      | timestamptz | Última atualização            |
-
----
-
-### 2. Secrets Necessários
-
-| Secret             | Descrição                         |
-|--------------------|-----------------------------------|
-| ZAPI_INSTANCE_ID   | ID da instância Z-API             |
-| ZAPI_TOKEN         | Token de autenticação da Z-API    |
-| ZAPI_CLIENT_TOKEN  | Token para validar webhook        |
-
----
-
-### 3. Edge Functions
-
-#### 3.1 `zapi-webhook` (Recebe mensagens do WhatsApp)
-
-Responsabilidades:
-1. Autenticar header `x-client-token` com secret `ZAPI_CLIENT_TOKEN`
-2. Ignorar mensagens com `isOld`, `isFromHistory`, ou timestamp < now()-2min
-3. Deduplicar via `provider_message_id` (ON CONFLICT DO NOTHING)
-4. Verificar se existe handoff `open` para o telefone:
-   - Se sim: salvar mensagem mas retornar 200 sem chamar IA
-   - Se não: continuar processamento
-5. Salvar mensagem inbound em `whatsapp_messages`
-6. Carregar últimas 15 mensagens do telefone para contexto
-7. Chamar `chat-atendimento` passando histórico formatado
-8. Se `humanHandoff: true`:
-   - Inserir em `human_handoff_queue` com status `open` e nome do paciente
-   - NÃO enviar resposta via Z-API
-9. Se `humanHandoff: false`:
-   - Enviar resposta via Z-API (`send-text`)
-   - Salvar outbound em `whatsapp_messages`
-
-#### 3.2 `zapi-status` (Verifica conexão e retorna QR)
-
-Responsabilidades:
-1. Chamar endpoint Z-API `/status` para verificar conexão
-2. Se desconectado, buscar QR Code via `/qr-code/image`
-3. Retornar `{ connected: boolean, qrCodeBase64?: string }`
-
----
-
-### 4. Interface do Usuário
-
-#### 4.1 Novo Item no Menu: "Integração" com Badge
-
-Adicionar no `AdminSidebar.tsx`:
-- Ícone: `Plug` do lucide-react
-- URL: `/admin/integracao`
-- Visível para **TODOS** os usuários
-- **Badge vermelho** quando há handoffs com status `open`
-
-```text
-┌─────────────────────────┐
-│   📋 GESTÃO             │
-├─────────────────────────┤
-│ 👥 Médicos              │
-│ 📄 Serviços             │
-│ 📅 Agendamentos         │
-│ 🔌 Integração 🔴 ← NOVO │
-│ 👤 Usuários (admin)     │
-└─────────────────────────┘
+**Antes:**
+```javascript
+// Verificava status
+// Se não conectado, buscava /qr-code/image (passivo)
 ```
 
-O badge vermelho:
-- Aparece apenas quando `COUNT(*) > 0` em `human_handoff_queue WHERE status = 'open'`
-- Atualiza em tempo real via Supabase Realtime
-- Mostra o número de pendentes (ex: "3")
+**Depois:**
+```javascript
+// 1. Verificar status via GET /status
+const statusUrl = `https://api.z-api.io/instances/${instanceId}/token/${zapiToken}/status`;
 
-#### 4.2 Página `/admin/integracao` com Tabs
+// 2. Se desconectado, chamar GET /connect para iniciar sessão
+const connectUrl = `https://api.z-api.io/instances/${instanceId}/token/${zapiToken}/connect`;
 
-Layout com duas abas usando componente Tabs existente:
+// 3. A resposta de /connect contém o QR Code diretamente
+// Possíveis formatos de resposta:
+//   - { value: "base64...", base64: true }
+//   - { qrcode: "texto ou base64" }
+//   - Imagem binária
+```
+
+**Lógica de tratamento da resposta:**
+1. Tentar parsear como JSON
+2. Se JSON, extrair `value` (base64) ou `qrcode`
+3. Se binário (image/png), converter para base64
+4. Sempre retornar prefixo `data:image/png;base64,...`
+
+**Tratamento de erros:**
+- Se `/connect` falhar, exibir mensagem clara no frontend
+- Logar erro detalhado para debug
+
+---
+
+### Fluxo Completo Atualizado
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
-│  Integração                                                 │
+│  Usuário abre /admin/integracao                             │
 ├─────────────────────────────────────────────────────────────┤
 │                                                             │
-│  [ WhatsApp ]  [ Atendimentos Pendentes (3) ]              │
-│  ─────────────────────────────────────────────              │
-│                                                             │
-│  (conteúdo da aba selecionada)                             │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
-```
-
-**Aba 1: WhatsApp**
-- Status da conexão (badge verde/vermelho)
-- QR Code se desconectado
-- Polling automático a cada 15 segundos
-
-```text
-┌─────────────────────────────────────────────┐
-│                                             │
-│    Status: 🔴 Desconectado                  │
-│                                             │
-│    ┌─────────────────┐                      │
-│    │                 │                      │
-│    │    QR CODE      │                      │
-│    │                 │                      │
-│    └─────────────────┘                      │
-│                                             │
-│    Escaneie o QR Code com o WhatsApp        │
-│    para conectar a clínica.                 │
-│                                             │
-└─────────────────────────────────────────────┘
-```
-
-**Aba 2: Atendimentos Pendentes**
-- Lista de handoffs com status `open`
-- Cada item mostra: Nome + Telefone + Tempo de espera
-- Botão "Marcar como Resolvido" em cada item
-- Atualização em tempo real
-
-```text
-┌─────────────────────────────────────────────────────────────┐
-│                                                             │
-│  Pacientes aguardando atendimento humano                    │
-│                                                             │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │ Maria Silva                                          │   │
-│  │ +55 11 99999-1234 • Aguardando há 12 minutos        │   │
-│  │                              [ Marcar como Resolvido]│   │
-│  └─────────────────────────────────────────────────────┘   │
-│                                                             │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │ João Santos                                          │   │
-│  │ +55 11 98888-5678 • Aguardando há 5 minutos         │   │
-│  │                              [ Marcar como Resolvido]│   │
-│  └─────────────────────────────────────────────────────┘   │
-│                                                             │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │ (Sem nome)                                           │   │
-│  │ +55 11 97777-9012 • Aguardando há 2 minutos         │   │
-│  │                              [ Marcar como Resolvido]│   │
-│  └─────────────────────────────────────────────────────┘   │
+│  1. Frontend chama zapi-status                              │
+│  2. Edge Function:                                          │
+│     a. GET /status → { connected: false }                   │
+│     b. GET /connect → retorna QR Code                       │
+│     c. Retorna { connected: false, qrCodeBase64: "..." }    │
+│  3. Frontend exibe QR Code                                  │
+│  4. Usuário escaneia com WhatsApp                           │
+│  5. Polling a cada 15s detecta connected = true             │
+│  6. Frontend mostra "Conectado"                             │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
-```
-
-Se não houver pendentes:
-```text
-┌─────────────────────────────────────────────┐
-│                                             │
-│    ✅ Nenhum atendimento pendente           │
-│                                             │
-│    Todos os pacientes estão sendo           │
-│    atendidos pela assistente Clara.         │
-│                                             │
-└─────────────────────────────────────────────┘
 ```
 
 ---
 
-### 5. Arquivos a Criar/Modificar
+### Arquivos a Modificar
 
 | Arquivo | Ação | Descrição |
 |---------|------|-----------|
-| **Migration SQL** | CRIAR | Tabelas `whatsapp_messages`, `human_handoff_queue`, `whatsapp_config` + RLS + Realtime |
-| `supabase/functions/zapi-webhook/index.ts` | CRIAR | Webhook principal |
-| `supabase/functions/zapi-status/index.ts` | CRIAR | Verificar status Z-API |
-| `supabase/config.toml` | MODIFICAR | Adicionar novas functions |
-| `src/pages/admin/Integracao.tsx` | CRIAR | Página com tabs (WhatsApp + Pendentes) |
-| `src/components/admin/AdminSidebar.tsx` | MODIFICAR | Adicionar item "Integração" com badge |
-| `src/App.tsx` | MODIFICAR | Adicionar rota `/admin/integracao` |
-| `src/hooks/useRealtimeHandoffs.ts` | CRIAR | Hook Realtime para contador de pendentes |
+| `supabase/functions/zapi-status/index.ts` | MODIFICAR | Usar endpoint `/connect` ao invés de `/qr-code/image` |
 
 ---
 
-### 6. Fluxo de Bloqueio (Handoff Ativo)
+### Observações Importantes
 
-Quando existe `human_handoff_queue.status = 'open'` para um telefone:
+1. **Sem client_token**: A Z-API usa apenas `instanceId` e `token` para autenticação da API. O `client_token` é usado apenas para validar webhooks, não para chamadas de API.
 
-1. Nova mensagem chega no webhook
-2. Webhook consulta: `SELECT id FROM human_handoff_queue WHERE phone = $1 AND status = 'open' LIMIT 1`
-3. **Se encontrar registro**:
-   - Salvar mensagem em `whatsapp_messages` (para manter contexto)
-   - Retornar 200 imediatamente
-   - IA permanece "silenciosa"
-4. **Ao clicar "Marcar como Resolvido"**:
-   - Status muda para `resolved`
-   - `resolved_at` = now()
-   - `resolved_by` = user_id do admin
-   - Próxima mensagem do paciente será processada pela Clara
+2. **Formato do QR**: O endpoint `/connect` pode retornar o QR em diferentes formatos. A implementação tratará todos os cenários.
 
----
+3. **Mensagem de erro**: Se houver falha na Z-API, o frontend exibirá a mensagem de erro específica recebida.
 
-### 7. Ordem de Implementação
-
-1. Solicitar secrets Z-API (ZAPI_INSTANCE_ID, ZAPI_TOKEN, ZAPI_CLIENT_TOKEN)
-2. Criar migration com as 3 tabelas + RLS + Realtime
-3. Criar Edge Function `zapi-status`
-4. Criar página `/admin/integracao` com tabs
-5. Modificar `AdminSidebar.tsx` com item + badge
-6. Modificar `App.tsx` com rota
-7. Criar hook `useRealtimeHandoffs`
-8. Criar Edge Function `zapi-webhook`
-9. Testar fluxo completo
-
----
-
-### 8. Mudanças vs Plano Anterior
-
-| Antes | Agora |
-|-------|-------|
-| Widget flutuante em todas as páginas | Aba dentro da página Integração |
-| Handoffs sempre visíveis | Badge vermelho no menu indica pendentes |
-| Pode distrair em outras telas | Limpo e organizado, só vê quando precisa |
+4. **Polling mantido**: O polling de 15 segundos continua funcionando para detectar quando a conexão for estabelecida.
 
