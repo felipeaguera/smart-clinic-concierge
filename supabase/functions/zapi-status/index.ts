@@ -28,7 +28,7 @@ Deno.serve(async (req) => {
       global: { headers: { Authorization: authHeader } },
     });
 
-    // Verify user is authenticated and admin
+    // Verify user is authenticated
     const token = authHeader.replace("Bearer ", "");
     const { data: claimsData, error: claimsError } = await supabase.auth.getClaims(token);
     
@@ -42,6 +42,7 @@ Deno.serve(async (req) => {
     // Get Z-API credentials
     const instanceId = Deno.env.get("ZAPI_INSTANCE_ID");
     const zapiToken = Deno.env.get("ZAPI_TOKEN");
+    const clientToken = Deno.env.get("ZAPI_CLIENT_TOKEN");
 
     if (!instanceId || !zapiToken) {
       return new Response(
@@ -54,46 +55,152 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Check Z-API connection status
+    // Headers for Z-API requests - Client-Token is optional for some endpoints
+    // Note: Client-Token is the Account Security Token from Z-API dashboard,
+    // NOT the instance token. If misconfigured, we try without it.
+    const zapiHeaders: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    
+    // Only add Client-Token if it looks valid (different from zapiToken)
+    if (clientToken && clientToken !== zapiToken && clientToken.length > 0) {
+      zapiHeaders["Client-Token"] = clientToken;
+    }
+
+    // Step 1: Check Z-API connection status
     const statusUrl = `https://api.z-api.io/instances/${instanceId}/token/${zapiToken}/status`;
     
     let connected = false;
-    let qrCodeBase64: string | null = null;
+    let statusError: string | null = null;
 
     try {
+      console.log("Checking Z-API status...");
       const statusResponse = await fetch(statusUrl, {
         method: "GET",
-        headers: { "Content-Type": "application/json" },
+        headers: zapiHeaders,
       });
 
+      const statusText = await statusResponse.text();
+      console.log("Z-API status response:", statusResponse.status, statusText);
+
       if (statusResponse.ok) {
-        const statusData = await statusResponse.json();
-        connected = statusData.connected === true || statusData.status === "connected";
+        try {
+          const statusData = JSON.parse(statusText);
+          connected = statusData.connected === true || statusData.status === "connected";
+          console.log("Connected status:", connected);
+        } catch {
+          console.log("Failed to parse status response as JSON");
+        }
+      } else {
+        // Try parsing error message
+        try {
+          const errorData = JSON.parse(statusText);
+          statusError = errorData.error || errorData.message || `Status check failed: ${statusResponse.status}`;
+        } catch {
+          statusError = `Status check failed: ${statusResponse.status}`;
+        }
       }
     } catch (e) {
       console.error("Error checking Z-API status:", e);
+      statusError = "Error connecting to Z-API";
     }
 
-    // If not connected, fetch QR code
-    if (!connected) {
-      try {
-        const qrUrl = `https://api.z-api.io/instances/${instanceId}/token/${zapiToken}/qr-code/image`;
-        const qrResponse = await fetch(qrUrl, {
-          method: "GET",
-        });
+    // If connected, return success
+    if (connected) {
+      return new Response(
+        JSON.stringify({ connected: true, qrCodeBase64: null }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
-        if (qrResponse.ok) {
-          const arrayBuffer = await qrResponse.arrayBuffer();
-          const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
-          qrCodeBase64 = `data:image/png;base64,${base64}`;
+    // Step 2: If not connected, fetch QR code image
+    const qrUrl = `https://api.z-api.io/instances/${instanceId}/token/${zapiToken}/qr-code/image`;
+    
+    let qrCodeBase64: string | null = null;
+    let errorMessage: string | null = statusError;
+
+    try {
+      console.log("Fetching QR code from Z-API...");
+      const qrResponse = await fetch(qrUrl, {
+        method: "GET",
+        headers: zapiHeaders,
+      });
+
+      const contentType = qrResponse.headers.get("content-type") || "";
+      console.log("QR response status:", qrResponse.status, "content-type:", contentType);
+
+      if (!qrResponse.ok) {
+        const errorText = await qrResponse.text();
+        console.error("Z-API QR error:", qrResponse.status, errorText);
+        
+        // Parse error message if JSON
+        try {
+          const errorData = JSON.parse(errorText);
+          errorMessage = errorData.error || errorData.message || `Z-API error: ${qrResponse.status}`;
+        } catch {
+          errorMessage = `Z-API error: ${qrResponse.status}`;
         }
-      } catch (e) {
-        console.error("Error fetching QR code:", e);
+      } else if (contentType.includes("application/json")) {
+        // JSON response - could be { value: "base64..." } or error
+        const jsonData = await qrResponse.json();
+        console.log("QR JSON response keys:", Object.keys(jsonData));
+
+        if (jsonData.value) {
+          const base64Data = jsonData.value;
+          if (base64Data.startsWith("data:image")) {
+            qrCodeBase64 = base64Data;
+          } else {
+            qrCodeBase64 = `data:image/png;base64,${base64Data}`;
+          }
+        } else if (jsonData.qrcode) {
+          const base64Data = jsonData.qrcode;
+          if (base64Data.startsWith("data:image")) {
+            qrCodeBase64 = base64Data;
+          } else {
+            qrCodeBase64 = `data:image/png;base64,${base64Data}`;
+          }
+        } else if (jsonData.error) {
+          errorMessage = jsonData.error;
+        } else if (jsonData.message) {
+          // Info message - might indicate need to restart instance
+          console.log("Z-API message:", jsonData.message);
+          errorMessage = jsonData.message;
+        }
+      } else if (contentType.includes("image/")) {
+        // Binary image response - convert to base64
+        const arrayBuffer = await qrResponse.arrayBuffer();
+        const bytes = new Uint8Array(arrayBuffer);
+        let binary = "";
+        for (let i = 0; i < bytes.length; i++) {
+          binary += String.fromCharCode(bytes[i]);
+        }
+        const base64 = btoa(binary);
+        qrCodeBase64 = `data:image/png;base64,${base64}`;
+        console.log("Converted binary image to base64, length:", base64.length);
+      } else {
+        // Text response - might be base64 directly
+        const textData = await qrResponse.text();
+        console.log("QR text response length:", textData.length);
+        
+        if (textData.startsWith("data:image")) {
+          qrCodeBase64 = textData;
+        } else if (textData.match(/^[A-Za-z0-9+/=]+$/) && textData.length > 100) {
+          qrCodeBase64 = `data:image/png;base64,${textData}`;
+        }
+      }
+    } catch (e) {
+      console.error("Error fetching QR code:", e);
+      if (!errorMessage) {
+        errorMessage = "Erro ao buscar QR Code";
       }
     }
 
     return new Response(
-      JSON.stringify({ connected, qrCodeBase64 }),
+      JSON.stringify({ 
+        connected: false, 
+        qrCodeBase64,
+        error: errorMessage
+      }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
 
