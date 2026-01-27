@@ -31,9 +31,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const roleCheckIdRef = useRef(0);
 
-  const checkAdminRole = useCallback(async (userId: string) => {
+  const checkAdminRole = useCallback(async (userId: string, options?: { blockUI?: boolean }) => {
     const checkId = ++roleCheckIdRef.current;
-    setIsLoading(true);
+    const blockUI = options?.blockUI ?? true;
+    if (blockUI) setIsLoading(true);
 
     try {
       const roleQuery = supabase
@@ -60,7 +61,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsAdmin(false);
     } finally {
       if (checkId !== roleCheckIdRef.current) return;
-      setIsLoading(false);
+      if (blockUI) setIsLoading(false);
     }
   }, []);
 
@@ -71,10 +72,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(session?.user ?? null);
 
       if (session?.user) {
-        setIsLoading(true);
+        // IMPORTANTE: eventos como TOKEN_REFRESHED podem acontecer ao trocar de aba/janela.
+        // Se marcarmos isLoading=true aqui, o ProtectedRoute desmonta a tela inteira
+        // (fecha modal, troca frase do sidebar, etc.). Então só bloqueamos a UI em
+        // eventos de login/logout; nos demais, revalidamos permissões em background.
+        const blockUI = event === 'SIGNED_IN' || event === 'SIGNED_OUT';
+
+        if (blockUI) setIsLoading(true);
+
         // Use setTimeout para evitar deadlock (não chamar supabase direto no callback)
         setTimeout(() => {
-          checkAdminRole(session.user.id);
+          checkAdminRole(session.user.id, { blockUI });
         }, 0);
       } else {
         // Invalida verificações pendentes
@@ -93,7 +101,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         if (session?.user) {
           setIsLoading(true);
-          await checkAdminRole(session.user.id);
+          await checkAdminRole(session.user.id, { blockUI: true });
         } else {
           setIsLoading(false);
         }
