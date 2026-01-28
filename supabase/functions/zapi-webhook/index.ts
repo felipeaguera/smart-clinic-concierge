@@ -172,10 +172,52 @@ Deno.serve(async (req) => {
     const aiResponse = chatResult.message || chatResult.resposta || chatResult.response || "";
     const humanHandoff = chatResult.handoff_humano || chatResult.humanHandoff || chatResult.human_handoff || false;
 
-    // If AI signals handoff, create handoff entry and DON'T send response
+    // If AI signals handoff, create handoff entry and send notification message
     if (humanHandoff) {
       console.log("AI requested human handoff");
       
+      // Send handoff notification message to patient
+      const instanceId = Deno.env.get("ZAPI_INSTANCE_ID");
+      const zapiToken = Deno.env.get("ZAPI_TOKEN");
+      const clientToken = Deno.env.get("ZAPI_CLIENT_TOKEN");
+      
+      const handoffMessage = "Entendi! Vou encaminhar você para um de nossos atendentes. " +
+        "Assim que possível, alguém da nossa equipe entrará em contato. " +
+        "Fique tranquilo(a), não precisa repetir a solicitação. 😊";
+
+      if (instanceId && zapiToken) {
+        const sendUrl = `https://api.z-api.io/instances/${instanceId}/token/${zapiToken}/send-text`;
+        
+        const sendResponse = await fetch(sendUrl, {
+          method: "POST",
+          headers: { 
+            "Content-Type": "application/json",
+            "Client-Token": clientToken || "",
+          },
+          body: JSON.stringify({
+            phone,
+            message: handoffMessage,
+          }),
+        });
+
+        if (sendResponse.ok) {
+          const sendResult = await sendResponse.json();
+          
+          // Save outbound message
+          await supabase.from("whatsapp_messages").insert({
+            phone,
+            provider_message_id: sendResult.messageId || null,
+            direction: "outbound",
+            content: handoffMessage,
+          });
+          
+          console.log("Handoff notification sent successfully");
+        } else {
+          console.error("Failed to send handoff notification:", await sendResponse.text());
+        }
+      }
+      
+      // Create handoff entry
       await supabase.from("human_handoff_queue").insert({
         phone,
         patient_name: senderName,
