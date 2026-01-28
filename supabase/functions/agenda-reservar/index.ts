@@ -176,8 +176,33 @@ Deno.serve(async (req) => {
 
     console.log('Regras filtradas por tipo_atendimento:', filteredRules)
 
-    if (filteredRules.length === 0) {
-      console.log('Nenhuma regra de atendimento encontrada para este dia/tipo')
+    // 2b) Buscar schedule_openings (datas extras) para este médico nesta data
+    const { data: openings, error: openingsError } = await supabase
+      .from('schedule_openings')
+      .select('*')
+      .eq('doctor_id', doctor_id)
+      .eq('data', data)
+
+    if (openingsError) {
+      console.error('Erro ao buscar schedule_openings:', openingsError)
+      return new Response(
+        JSON.stringify({ error: 'Erro ao buscar datas extras' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    console.log('Schedule openings encontradas:', openings)
+
+    // Filtrar openings por tipo_atendimento compatível
+    const filteredOpenings = openings?.filter(opening => 
+      opening.tipo_atendimento === 'ambos' || opening.tipo_atendimento === examType.categoria
+    ) || []
+
+    console.log('Openings filtradas por tipo_atendimento:', filteredOpenings)
+
+    // Verificar se há regras OU openings válidas
+    if (filteredRules.length === 0 && filteredOpenings.length === 0) {
+      console.log('Nenhuma regra ou agenda extra encontrada para este dia/tipo')
       return new Response(
         JSON.stringify({ error: 'Médico não atende neste dia ou para este tipo de exame' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -210,10 +235,11 @@ Deno.serve(async (req) => {
       )
     }
 
-    // 4) Verificar se o horário está dentro de alguma regra válida
+    // 4) Verificar se o horário está dentro de alguma regra OU opening válida
     const horaInicioMinutos = timeToMinutes(hora_inicio)
     const horaFimMinutos = timeToMinutes(hora_fim)
 
+    // Verificar nas regras semanais
     const isWithinRule = filteredRules.some(rule => {
       const ruleStart = timeToMinutes(rule.hora_inicio)
       const ruleEnd = timeToMinutes(rule.hora_fim)
@@ -221,8 +247,16 @@ Deno.serve(async (req) => {
       return horaInicioMinutos >= ruleStart && horaInicioMinutos <= ruleEnd
     })
 
-    if (!isWithinRule) {
-      console.error('Horário fora das regras de atendimento:', { hora_inicio, hora_fim })
+    // Verificar nas openings (datas extras)
+    const isWithinOpening = filteredOpenings.some(opening => {
+      const openingStart = timeToMinutes(opening.hora_inicio)
+      const openingEnd = timeToMinutes(opening.hora_fim)
+      // Permite que o slot COMECE até o horário limite (hora_fim)
+      return horaInicioMinutos >= openingStart && horaInicioMinutos <= openingEnd
+    })
+
+    if (!isWithinRule && !isWithinOpening) {
+      console.error('Horário fora das regras/openings de atendimento:', { hora_inicio, hora_fim })
       return new Response(
         JSON.stringify({ error: 'Horário fora do período de atendimento do médico' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
