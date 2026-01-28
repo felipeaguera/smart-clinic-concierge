@@ -257,7 +257,8 @@ function generateTimeSlots(
   let currentMinutes = startHour * 60 + startMin
   const endMinutes = endHour * 60 + endMin
   
-  while (currentMinutes + duracaoMinutos <= endMinutes) {
+  // Permite que o último slot COMECE até o horário limite (hora_fim)
+  while (currentMinutes <= endMinutes) {
     const slotStart = minutesToTime(currentMinutes)
     const slotEnd = minutesToTime(currentMinutes + duracaoMinutos)
     
