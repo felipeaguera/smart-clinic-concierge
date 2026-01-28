@@ -210,21 +210,27 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Load last 15 messages for context
+    // Load recent messages for context (MOST RECENT first, then reverse to chronological)
+    // IMPORTANT: Using ascending + limit would return the oldest messages and lose context.
     const { data: contextMessages } = await supabase
       .from("whatsapp_messages")
       .select("direction, content, created_at")
       .eq("phone", phone)
-      .order("created_at", { ascending: true })
-      .limit(15);
+      .order("created_at", { ascending: false })
+      .limit(30);
 
-    // Format messages for AI
-    const formattedHistory = (contextMessages || []).map((msg) => ({
-      role: msg.direction === "inbound" ? "user" : "assistant",
-      content: msg.content,
-    }));
+    const formattedHistory = (contextMessages || [])
+      .slice()
+      .reverse()
+      .map((msg) => ({
+        role: msg.direction === "inbound" ? "user" : "assistant",
+        content: msg.content,
+      }));
 
-    // Call chat-atendimento edge function
+    // Call chat-atendimento backend function.
+    // IMPORTANT: Don't send `mensagem` separately because the last inbound message is
+    // already included in formattedHistory (we just inserted it). Sending both duplicates
+    // the user's last message and can confuse the model.
     const chatResponse = await fetch(`${supabaseUrl}/functions/v1/chat-atendimento`, {
       method: "POST",
       headers: {
@@ -232,8 +238,7 @@ Deno.serve(async (req) => {
         Authorization: `Bearer ${supabaseServiceKey}`,
       },
       body: JSON.stringify({
-        mensagem: text,
-        historico: formattedHistory,
+        messages: formattedHistory,
         canal: "whatsapp",
         telefone: phone,
         nome_paciente: senderName,
