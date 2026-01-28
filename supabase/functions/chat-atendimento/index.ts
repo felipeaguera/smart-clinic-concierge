@@ -12,14 +12,33 @@ const corsHeaders = {
 const SYSTEM_PROMPT = `Você é Clara, assistente virtual da Clínica Pilar Med.
 
 ═══════════════════════════════════════
-0. APRESENTAÇÃO INICIAL (SEMPRE na primeira mensagem)
+0. APRESENTAÇÃO E CONTINUIDADE DA CONVERSA (CRÍTICO!)
 ═══════════════════════════════════════
-Quando o paciente enviar a PRIMEIRA mensagem da conversa (histórico vazio ou apenas 1-2 mensagens):
-- Se apresente de forma calorosa e pessoal
+
+⚠️ REGRA MAIS IMPORTANTE: ANALISE O HISTÓRICO ANTES DE RESPONDER!
+
+COMO IDENTIFICAR SE DEVE SE APRESENTAR:
+- Verifique se JÁ EXISTE conversa anterior no histórico
+- Se o histórico contém mensagens anteriores sobre agendamentos/exames → É UMA CONTINUAÇÃO
+- Se você (assistant) já se apresentou antes → NÃO se apresente novamente!
+
+QUANDO SE APRESENTAR (primeira mensagem apenas):
+- Histórico vazio ou só tem 1-2 mensagens genéricas ("oi", "olá")
 - Use: "Olá! Eu sou a Clara 😊, assistente virtual da Pilar Med! Como posso ajudar você hoje?"
-- OU: "Oi! Aqui é a Clara, da Pilar Med! Em que posso ajudar? 😊"
-- NUNCA comece apenas com "Olá! Como posso ajudar?" - isso é impessoal demais.
-- Se o paciente já se identificou pelo nome, use: "Olá, [nome]! Eu sou a Clara, assistente da Pilar Med 😊"
+
+QUANDO NÃO SE APRESENTAR (maioria das vezes):
+- Já existe conversa em andamento sobre agendamento/exame
+- Paciente está respondendo a uma pergunta sua
+- Paciente está escolhendo um horário que você ofereceu
+- Exemplo: paciente diz "as 8 da manha" após você listar horários → CONTINUAR CONVERSA, não recomeçar!
+
+⚠️ PROIBIÇÃO ABSOLUTA: Se você já ofereceu horários e o paciente escolheu um, NUNCA pergunte "o que você gostaria de agendar?" - isso mostra que você perdeu o contexto!
+
+EXEMPLO DE ERRO A EVITAR:
+- Você: "Temos 08:00, 08:20, 08:40. Qual deles seria melhor?"
+- Paciente: "as 8 da manha"
+- ❌ ERRADO: "Olá! Eu sou a Clara! O que você gostaria de agendar?"
+- ✅ CERTO: "Perfeito! Vou reservar às 08:00. Qual é o seu nome completo para confirmar?"
 
 ═══════════════════════════════════════
 1. REGRAS INVIOLÁVEIS
@@ -193,7 +212,11 @@ PASSO 3: HORÁRIO ESPECÍFICO (se paciente mencionar)
 PASSO 4: BUSCA DE PRÓXIMA VAGA (sem horário específico)
 - Usar buscar_proxima_vaga para encontrar PRIMEIRA disponibilidade
 - Aplicar Regra Temporal (Seção 4)
-- Exibir APENAS 3 PRÓXIMOS HORÁRIOS em ordem cronológica
+- ⚠️ LIMITE ESTRITO: Exibir APENAS 3 HORÁRIOS, bem espaçados (ex: 08:00, 09:00, 10:00)
+- NUNCA listar horários sequenciais de 10 em 10 minutos (ex: 08:00, 08:10, 08:20)
+- Selecionar horários espaçados em ~30-60 minutos para não poluir a conversa
+- Se paciente pedir "manhã" → mostrar 3 horários da manhã espaçados
+- Se paciente pedir "tarde" → mostrar 3 horários da tarde espaçados
 
 PASSO 5: ULTRASSONS
 1. buscar_disponibilidade_categoria com exam_type_id + data
@@ -315,6 +338,39 @@ Exemplos de uso natural:
 interface Message {
   role: "user" | "assistant" | "system";
   content: string;
+}
+
+// Helper para espaçar horários (não mostrar sequenciais de 10 em 10)
+function selectSpacedSlots(slots: any[], maxSlots: number = 3, minGapMinutes: number = 30): any[] {
+  if (!Array.isArray(slots) || slots.length === 0) return [];
+  if (slots.length <= maxSlots) return slots;
+  
+  const timeToMinutes = (time: string) => {
+    const [h, m] = (time || "").split(":").map(Number);
+    return (h || 0) * 60 + (m || 0);
+  };
+  
+  const result: any[] = [slots[0]];
+  let lastMinutes = timeToMinutes(slots[0]?.hora_inicio);
+  
+  for (let i = 1; i < slots.length && result.length < maxSlots; i++) {
+    const currentMinutes = timeToMinutes(slots[i]?.hora_inicio);
+    if (currentMinutes - lastMinutes >= minGapMinutes) {
+      result.push(slots[i]);
+      lastMinutes = currentMinutes;
+    }
+  }
+  
+  // Se não conseguiu preencher, pega os primeiros mesmo
+  if (result.length < maxSlots) {
+    for (const slot of slots) {
+      if (!result.includes(slot) && result.length < maxSlots) {
+        result.push(slot);
+      }
+    }
+  }
+  
+  return result.sort((a, b) => timeToMinutes(a.hora_inicio) - timeToMinutes(b.hora_inicio));
 }
 
 interface ConversationContext {
@@ -1183,7 +1239,9 @@ ${examTypes
                   : [];
 
                 if (slots.length > 0) {
-                  found = { modo: "doctor", data: date, doctor_id: args.doctor_id, horarios_disponiveis: slots };
+                  // Aplicar espaçamento nos horários para não mostrar sequenciais
+                  const spacedSlots = selectSpacedSlots(slots, 3, 30);
+                  found = { modo: "doctor", data: date, doctor_id: args.doctor_id, horarios_disponiveis: spacedSlots };
                   break;
                 }
               } else {
@@ -1213,7 +1271,9 @@ ${examTypes
                                 return Number.isFinite(m) && m >= minMinutes;
                               });
 
-                        return { ...d, [slotsKey]: filtered };
+                        // Aplicar espaçamento nos horários
+                        const spacedSlots = selectSpacedSlots(filtered, 3, 30);
+                        return { ...d, [slotsKey]: spacedSlots };
                       })
                       .filter((d: any) => {
                         const arr = Array.isArray(d?.slots)
