@@ -49,6 +49,45 @@ Deno.serve(async (req) => {
 
     const { doctor_id, exam_type_id, data, hora_inicio, hora_fim, paciente_nome, paciente_telefone } = parseResult.data
 
+    // ============================================================
+    // VALIDAÇÃO CRÍTICA: Rejeitar nomes que são claramente placeholders
+    // ============================================================
+    const invalidPatientNames = [
+      '[nome_completo_do_paciente]',
+      '[nome do paciente]',
+      '[nome_paciente]',
+      '[nome completo]',
+      '[nome]',
+      'nome_completo_do_paciente',
+      'nome do paciente',
+      'nome_paciente',
+      'nome completo',
+      'paciente',
+      'teste',
+      'test',
+      'xxx',
+      'aaa',
+      'placeholder',
+    ]
+
+    if (paciente_nome) {
+      const normalizedName = paciente_nome.toLowerCase().trim()
+      const isPlaceholder = invalidPatientNames.some(
+        placeholder => normalizedName === placeholder || normalizedName.includes('[') || normalizedName.includes(']')
+      )
+      
+      if (isPlaceholder) {
+        console.error('Nome do paciente parece ser um placeholder:', paciente_nome)
+        return new Response(
+          JSON.stringify({ 
+            error: 'Nome do paciente inválido. Por favor, informe o nome completo real do paciente.',
+            code: 'INVALID_PATIENT_NAME'
+          }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+    }
+
     console.log('Payload validado:', { doctor_id, exam_type_id, data, hora_inicio, hora_fim, paciente_nome: paciente_nome ? '[REDACTED]' : null, paciente_telefone: paciente_telefone ? '[REDACTED]' : null })
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!

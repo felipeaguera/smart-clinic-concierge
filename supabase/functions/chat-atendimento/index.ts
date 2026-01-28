@@ -51,7 +51,15 @@ EXEMPLO DE ERRO A EVITAR:
 6. Não informar duração da consulta ou exame (a menos que pergunte explicitamente).
 7. Sempre cordial e acolhedor.
 8. Reagendamento/troca de horário → SEMPRE encaminhar para humano.
-9. ANTES de reservar_horario → PERGUNTAR NOME COMPLETO e AGUARDAR resposta. NUNCA inventar nomes.
+
+9. ⚠️ REGRA CRÍTICA DE RESERVA - NOME DO PACIENTE:
+   - ANTES de chamar reservar_horario → PERGUNTAR NOME COMPLETO e AGUARDAR resposta do paciente
+   - NUNCA inventar ou usar placeholder como "[NOME_COMPLETO_DO_PACIENTE]" 
+   - O nome DEVE ser uma resposta real do paciente na conversa
+   - Se o paciente ainda não informou o nome → PERGUNTE e ESPERE a resposta
+   - PROIBIÇÃO ABSOLUTA: Chamar reservar_horario sem ter recebido o nome REAL do paciente
+   - Se você não sabe o nome → NÃO CHAME reservar_horario!
+
 10. ⚠️ CRÍTICO - NUNCA INVENTAR HORÁRIOS:
     - SOMENTE exiba horários que vieram LITERALMENTE da resposta das ferramentas
     - Se buscar_disponibilidade retornar VAZIO → diga "Não há disponibilidade nessa data"
@@ -59,6 +67,11 @@ EXEMPLO DE ERRO A EVITAR:
     - NUNCA suponha, deduza, ou invente horários como "08:00, 08:10, 08:20" sem eles estarem no JSON de resposta
     - VERIFICAR: O horário que você vai mostrar está EXATAMENTE na resposta da ferramenta?
     - Se a ferramenta retornar disponibilidades: [] → NÃO HÁ HORÁRIOS, ponto final.
+
+11. ⚠️ QUANDO HORÁRIO NÃO ESTÁ MAIS DISPONÍVEL:
+    - Se o paciente escolheu 08:00 mas não está mais disponível → mostre o PRÓXIMO IMEDIATO (08:10, não 08:30!)
+    - Busque disponibilidade atualizada e mostre os horários mais próximos ao que foi solicitado
+    - NUNCA pule horários intermediários (ex: se 08:10 e 08:20 estão livres, não mostre só 08:30)
 
 ═══════════════════════════════════════
 2. REGRA DE DESAMBIGUAÇÃO (aplicar SEMPRE no início)
@@ -995,7 +1008,7 @@ ${examTypes
         function: {
           name: "reservar_horario",
           description:
-            "Reserva um horário. REGRAS OBRIGATÓRIAS: 1) SOMENTE usar após o paciente CONFIRMAR o horário. 2) O paciente DEVE ter informado seu NOME COMPLETO na conversa ANTES de chamar esta função. 3) Se o nome não foi informado, PERGUNTE primeiro e espere a resposta. 4) NUNCA use nomes fictícios ou inventados.",
+            "Reserva um horário. REGRAS CRÍTICAS OBRIGATÓRIAS: 1) SOMENTE usar após o paciente CONFIRMAR o horário. 2) O paciente DEVE ter informado seu NOME COMPLETO na conversa ANTES de chamar esta função. 3) Se o nome não foi informado, PERGUNTE primeiro e espere a resposta. 4) NUNCA use placeholder como '[NOME_COMPLETO_DO_PACIENTE]' ou nomes inventados - isso causará ERRO. 5) O nome deve ser EXATAMENTE o que o paciente digitou na conversa.",
           parameters: {
             type: "object",
             properties: {
@@ -1007,7 +1020,7 @@ ${examTypes
               paciente_nome: {
                 type: "string",
                 description:
-                  "Nome completo do paciente (DEVE ter sido informado pelo paciente na conversa, NUNCA inventar)",
+                  "Nome completo do paciente (DEVE ser o nome REAL informado pelo paciente na conversa. NUNCA use placeholder como '[NOME_COMPLETO_DO_PACIENTE]'. Se o paciente não informou o nome ainda, NÃO chame esta função!)",
               },
             },
             required: ["doctor_id", "exam_type_id", "data", "hora_inicio", "hora_fim", "paciente_nome"],
@@ -1343,22 +1356,49 @@ ${examTypes
 
           console.log("Próxima vaga result:", result);
         } else if (functionName === "reservar_horario") {
-          const reservarResponse = await fetch(`${supabaseUrl}/functions/v1/agenda-reservar`, {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${supabaseKey}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              doctor_id: args.doctor_id,
-              exam_type_id: args.exam_type_id,
-              data: args.data,
-              hora_inicio: args.hora_inicio,
-              hora_fim: args.hora_fim,
-              paciente_nome: args.paciente_nome,
-            }),
-          });
-          result = await reservarResponse.json();
+          // VALIDAÇÃO CRÍTICA: Rejeitar nomes que são placeholders ANTES de chamar a API
+          const invalidPatientNames = [
+            '[nome_completo_do_paciente]',
+            '[nome do paciente]',
+            '[nome_paciente]',
+            '[nome completo]',
+            '[nome]',
+            'nome_completo_do_paciente',
+            'nome do paciente',
+            'nome_paciente',
+            'nome completo',
+            'paciente',
+          ];
+          
+          const patientName = String(args.paciente_nome || '').toLowerCase().trim();
+          const isPlaceholder = invalidPatientNames.some(
+            placeholder => patientName === placeholder || patientName.includes('[') || patientName.includes(']')
+          );
+          
+          if (isPlaceholder || patientName.length < 3) {
+            console.log("Nome do paciente parece ser placeholder - rejeitando:", args.paciente_nome);
+            result = {
+              error: "Nome do paciente inválido. Pergunte o nome completo real do paciente antes de reservar.",
+              code: "PLACEHOLDER_NAME_REJECTED"
+            };
+          } else {
+            const reservarResponse = await fetch(`${supabaseUrl}/functions/v1/agenda-reservar`, {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${supabaseKey}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                doctor_id: args.doctor_id,
+                exam_type_id: args.exam_type_id,
+                data: args.data,
+                hora_inicio: args.hora_inicio,
+                hora_fim: args.hora_fim,
+                paciente_nome: args.paciente_nome,
+              }),
+            });
+            result = await reservarResponse.json();
+          }
           console.log("Reservar result:", result);
         } else if (functionName === "reservar_multiplos_horarios") {
           // Nova função para reservar múltiplos exames consecutivos
