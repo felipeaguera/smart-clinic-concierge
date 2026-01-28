@@ -12,12 +12,12 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // Validate x-client-token header
-    const clientToken = req.headers.get("x-client-token");
+    // Validate Client-Token header (Z-API uses "Client-Token", not "x-client-token")
+    const clientToken = req.headers.get("Client-Token") || req.headers.get("client-token");
     const expectedToken = Deno.env.get("ZAPI_CLIENT_TOKEN");
 
     if (!clientToken || clientToken !== expectedToken) {
-      console.log("Invalid or missing x-client-token");
+      console.log("Invalid or missing Client-Token. Received:", clientToken ? "token present" : "no token");
       return new Response(
         JSON.stringify({ error: "Unauthorized" }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
