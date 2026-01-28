@@ -167,8 +167,10 @@ Deno.serve(async (req) => {
     }
 
     const chatResult = await chatResponse.json();
-    const aiResponse = chatResult.resposta || chatResult.response || "";
-    const humanHandoff = chatResult.handoff_humano || chatResult.humanHandoff || false;
+    // chat-atendimento returns { message, humanHandoff }.
+    // Keep backward compatibility with older keys.
+    const aiResponse = chatResult.message || chatResult.resposta || chatResult.response || "";
+    const humanHandoff = chatResult.handoff_humano || chatResult.humanHandoff || chatResult.human_handoff || false;
 
     // If AI signals handoff, create handoff entry and DON'T send response
     if (humanHandoff) {
