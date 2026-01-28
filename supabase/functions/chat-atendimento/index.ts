@@ -515,10 +515,46 @@ serve(async (req) => {
   }
 
   try {
-    const { messages, context } = (await req.json()) as {
-      messages: Message[];
-      context?: ConversationContext;
-    };
+    const body = (await req.json()) as any;
+
+    // Backward/forward compatible payload parsing.
+    // Supported:
+    // 1) { messages: Message[], context? }
+    // 2) { mensagem: string, historico?: { role: string, content: string }[], ... }
+    const context = (body?.context ?? {}) as ConversationContext | undefined;
+
+    const parsedMessages: Message[] = Array.isArray(body?.messages)
+      ? body.messages
+      : Array.isArray(body?.historico)
+        ? body.historico
+        : [];
+
+    const mensagem = typeof body?.mensagem === "string" ? body.mensagem : "";
+    const messages: Message[] = parsedMessages
+      .filter((m: any) => m && typeof m.content === "string" && typeof m.role === "string")
+      .map((m: any) => ({
+        role: m.role === "assistant" ? "assistant" : m.role === "system" ? "system" : "user",
+        content: String(m.content),
+      }));
+
+    // If webhook sent a single message, append it so we always have a user turn.
+    if (mensagem.trim().length > 0) {
+      messages.push({ role: "user", content: mensagem.trim() });
+    }
+
+    if (!Array.isArray(messages)) {
+      return new Response(
+        JSON.stringify({ error: "Invalid payload: messages" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    if (messages.length === 0) {
+      return new Response(
+        JSON.stringify({ error: "Empty conversation" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) {
