@@ -12,12 +12,27 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // Validate Client-Token header (Z-API uses "Client-Token", not "x-client-token")
-    const clientToken = req.headers.get("Client-Token") || req.headers.get("client-token");
+    // Validate webhook secret.
+    // IMPORTANT: Z-API webhooks often do NOT include custom headers, so we support:
+    // - Header: Client-Token / x-client-token
+    // - Query param: ?token=...
     const expectedToken = Deno.env.get("ZAPI_CLIENT_TOKEN");
+    const url = new URL(req.url);
+    const tokenFromQuery = url.searchParams.get("token");
+    const tokenFromHeaders =
+      req.headers.get("Client-Token") ||
+      req.headers.get("client-token") ||
+      req.headers.get("x-client-token") ||
+      req.headers.get("X-Client-Token");
 
-    if (!clientToken || clientToken !== expectedToken) {
-      console.log("Invalid or missing Client-Token. Received:", clientToken ? "token present" : "no token");
+    const providedToken = tokenFromHeaders || tokenFromQuery;
+    if (!expectedToken || !providedToken || providedToken !== expectedToken) {
+      console.log(
+        "Unauthorized webhook (missing/invalid token). HasHeaderToken:",
+        Boolean(tokenFromHeaders),
+        "HasQueryToken:",
+        Boolean(tokenFromQuery)
+      );
       return new Response(
         JSON.stringify({ error: "Unauthorized" }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
