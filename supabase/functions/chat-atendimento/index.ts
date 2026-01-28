@@ -643,6 +643,41 @@ serve(async (req) => {
       messages.push({ role: "user", content: mensagem.trim() });
     }
 
+    // WhatsApp users often reply with short confirmations like "sim" / "ok".
+    // When that happens, we must treat it as an answer to the previous assistant question
+    // (instead of restarting the conversation).
+    const lastIdx = messages.length - 1;
+    const last = messages[lastIdx];
+    if (last?.role === "user") {
+      const lastNorm = normalizeText(last.content);
+      const isShortAffirmative =
+        ["sim", "ok", "pode", "pode sim", "pode ser", "isso", "isso mesmo", "claro", "pode verificar"].includes(
+          lastNorm,
+        ) ||
+        (/^(sim|ok|pode|claro|isso)(\s+por\s+favor)?[!.]*$/i.test(last.content.trim()) &&
+          last.content.trim().length <= 25);
+
+      if (isShortAffirmative) {
+        const prevAssistant = [...messages]
+          .slice(0, -1)
+          .reverse()
+          .find((m) => m.role === "assistant")?.content;
+        const prevAssistantNorm = prevAssistant ? normalizeText(prevAssistant) : "";
+
+        // If Clara asked permission to check another date, expand the user's "sim" to an explicit request.
+        const askedToCheckOtherDay =
+          prevAssistantNorm.includes("posso verificar") &&
+          (prevAssistantNorm.includes("outro dia") || prevAssistantNorm.includes("outra data"));
+
+        if (askedToCheckOtherDay) {
+          messages[lastIdx] = {
+            role: "user",
+            content: "Sim, pode verificar disponibilidade para outro dia, por favor.",
+          };
+        }
+      }
+    }
+
     if (!Array.isArray(messages)) {
       return new Response(
         JSON.stringify({ error: "Invalid payload: messages" }),
