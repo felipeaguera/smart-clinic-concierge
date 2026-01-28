@@ -5,6 +5,64 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-client-token",
 };
 
+// Helper to check if a message is from Clara (sent via API) by checking provider_message_id
+async function isMessageFromClara(supabase: any, messageId: string): Promise<boolean> {
+  if (!messageId) return false;
+  
+  const { data: existingMsg } = await supabase
+    .from("whatsapp_messages")
+    .select("id")
+    .eq("provider_message_id", messageId)
+    .maybeSingle();
+  
+  return !!existingMsg;
+}
+
+// Helper to create or update auto-pause for 1 hour
+async function createOrUpdateAutoPause(supabase: any, phone: string, senderName: string | null) {
+  const oneHourFromNow = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  
+  // Check if there's already a handoff entry for this phone
+  const { data: existingHandoff } = await supabase
+    .from("human_handoff_queue")
+    .select("id, status")
+    .eq("phone", phone)
+    .or(`status.eq.open,auto_pause_until.gt.${new Date().toISOString()}`)
+    .maybeSingle();
+  
+  if (existingHandoff) {
+    // Update existing entry with new pause time
+    await supabase
+      .from("human_handoff_queue")
+      .update({ auto_pause_until: oneHourFromNow })
+      .eq("id", existingHandoff.id);
+    console.log("Updated auto-pause for phone:", phone);
+  } else {
+    // Create new entry with auto-pause (status = 'resolved' since it's automatic)
+    await supabase.from("human_handoff_queue").insert({
+      phone,
+      patient_name: senderName,
+      status: "resolved", // Not a manual handoff, just auto-pause
+      auto_pause_until: oneHourFromNow,
+    });
+    console.log("Created auto-pause for phone:", phone);
+  }
+}
+
+// Helper to check if Clara should be paused (handoff open OR auto-pause active)
+async function shouldPauseClara(supabase: any, phone: string): Promise<boolean> {
+  const now = new Date().toISOString();
+  
+  const { data: activeHandoff } = await supabase
+    .from("human_handoff_queue")
+    .select("id, status, auto_pause_until")
+    .eq("phone", phone)
+    .or(`status.eq.open,auto_pause_until.gt.${now}`)
+    .maybeSingle();
+  
+  return !!activeHandoff;
+}
+
 Deno.serve(async (req) => {
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
@@ -13,9 +71,6 @@ Deno.serve(async (req) => {
 
   try {
     // Validate webhook secret.
-    // IMPORTANT: Z-API webhooks often do NOT include custom headers, so we support:
-    // - Header: Client-Token / x-client-token
-    // - Query param: ?token=...
     const expectedToken = Deno.env.get("ZAPI_CLIENT_TOKEN");
     const url = new URL(req.url);
     const tokenFromQuery = url.searchParams.get("token");
@@ -42,9 +97,54 @@ Deno.serve(async (req) => {
     const body = await req.json();
     console.log("Webhook received:", JSON.stringify(body, null, 2));
 
-    // Ignore messages from self (fromMe), old messages, or history sync
-    if (body.fromMe || body.isOld || body.isFromHistory || body.waitingMessage) {
-      console.log("Ignoring message: fromMe, isOld, isFromHistory, or waitingMessage");
+    // Initialize Supabase with service role
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    // Extract common data
+    const phone = body.phone || body.from?.replace("@c.us", "");
+    const messageId = body.messageId || body.id;
+    const text = body.text?.message || body.text || body.body || "";
+    const senderName = body.senderName || body.pushName || body.notifyName || null;
+
+    // Handle fromMe messages (could be Clara or Secretary)
+    if (body.fromMe) {
+      // Check if message is old or from history - ignore these
+      if (body.isOld || body.isFromHistory || body.waitingMessage) {
+        console.log("Ignoring fromMe message: isOld, isFromHistory, or waitingMessage");
+        return new Response(
+          JSON.stringify({ success: true, ignored: true }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // Check if this message was sent by Clara (already exists in our database)
+      const isFromClara = await isMessageFromClara(supabase, messageId);
+      
+      if (isFromClara) {
+        console.log("Message is from Clara (API), ignoring");
+        return new Response(
+          JSON.stringify({ success: true, ignored: true, reason: "from_clara" }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // This is a manual message from the secretary - create/update auto-pause
+      console.log("Manual message from secretary detected, creating 1-hour auto-pause");
+      await createOrUpdateAutoPause(supabase, phone, null);
+      
+      return new Response(
+        JSON.stringify({ success: true, autoPauseCreated: true }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // From here on, handle inbound messages from patients (fromMe = false)
+    
+    // Ignore old messages or history sync
+    if (body.isOld || body.isFromHistory || body.waitingMessage) {
+      console.log("Ignoring message: isOld, isFromHistory, or waitingMessage");
       return new Response(
         JSON.stringify({ success: true, ignored: true }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -67,12 +167,6 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Extract message data
-    const phone = body.phone || body.from?.replace("@c.us", "");
-    const messageId = body.messageId || body.id;
-    const text = body.text?.message || body.text || body.body || "";
-    const senderName = body.senderName || body.pushName || body.notifyName || null;
-
     if (!phone || !text) {
       console.log("Missing phone or text");
       return new Response(
@@ -80,11 +174,6 @@ Deno.serve(async (req) => {
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-
-    // Initialize Supabase with service role
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     // Check for duplicate message (idempotency)
     if (messageId) {
@@ -103,14 +192,6 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Check if there's an open handoff for this phone
-    const { data: openHandoff } = await supabase
-      .from("human_handoff_queue")
-      .select("id")
-      .eq("phone", phone)
-      .eq("status", "open")
-      .maybeSingle();
-
     // Save inbound message to context table
     await supabase.from("whatsapp_messages").insert({
       phone,
@@ -119,9 +200,10 @@ Deno.serve(async (req) => {
       content: text,
     });
 
-    // If handoff is open, don't process with AI
-    if (openHandoff) {
-      console.log("Handoff open for this phone, skipping AI processing");
+    // Check if Clara should be paused (handoff open OR auto-pause active)
+    const isPaused = await shouldPauseClara(supabase, phone);
+    if (isPaused) {
+      console.log("Clara is paused for this phone (handoff or auto-pause), skipping AI processing");
       return new Response(
         JSON.stringify({ success: true, handoffActive: true }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -167,8 +249,6 @@ Deno.serve(async (req) => {
     }
 
     const chatResult = await chatResponse.json();
-    // chat-atendimento returns { message, humanHandoff }.
-    // Keep backward compatibility with older keys.
     const aiResponse = chatResult.message || chatResult.resposta || chatResult.response || "";
     const humanHandoff = chatResult.handoff_humano || chatResult.humanHandoff || chatResult.human_handoff || false;
 
