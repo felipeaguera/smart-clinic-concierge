@@ -1,107 +1,185 @@
 
 
-## Plano: Corrigir Geração do QR Code Z-API
+## Plano: Ajustar Regra de Horário Final para Permitir Último Slot
 
 ### Problema Identificado
 
-A Edge Function `zapi-status` atual usa apenas o endpoint `/qr-code/image`, que retorna o QR Code apenas se a sessão já foi iniciada. Para gerar um novo QR Code, é necessário **chamar ativamente** o endpoint `/connect` da Z-API.
+Quando um médico configura atendimento das **14:00 às 17:00** com exames de **20 minutos**, a lógica atual **NÃO permite** agendar às 17:00.
 
-**Confirmação dos Secrets**:
-Sim, os secrets estão configurados corretamente conforme a imagem:
-- **ZAPI_INSTANCE_ID**: `3EDDF0215D68C15FC4920203B614D70E`
-- **ZAPI_TOKEN**: `AC8BC988CE25D949C131BD67`
+**Por quê?**
+
+A função `generateTimeSlots()` nas Edge Functions usa a condição:
+
+```javascript
+while (currentMinutes + duracaoMinutos <= endMinutes) {
+  // Gera slot
+}
+```
+
+Isso significa:
+- Para agendar às 17:00, o sistema verifica: `17:00 (1020 min) + 20 min = 1040 min`
+- O horário fim é 17:00 (1020 min)
+- Como `1040 > 1020`, o slot das 17:00 **NÃO é gerado**
+
+**Slots gerados atualmente** (14:00-17:00, duração 20 min):
+| Início | Fim |
+|--------|-----|
+| 14:00 | 14:20 |
+| 14:20 | 14:40 |
+| 14:40 | 15:00 |
+| ... | ... |
+| 16:20 | 16:40 |
+| 16:40 | 17:00 ← **ÚLTIMO** |
+
+O slot **17:00-17:20** não é gerado porque ultrapassa o limite de 17:00.
 
 ---
 
-### Solução
+### Solução Proposta
 
-Modificar a Edge Function `zapi-status` para seguir o fluxo correto da Z-API:
+Mudar a interpretação do horário final para significar **"horário de início do último atendimento possível"** ao invés de **"horário máximo de término"**.
 
-```text
-1. Chamar GET /status → verificar se connected
-2. Se NÃO connected:
-   a. Chamar GET /connect → iniciar sessão e obter QR
-   b. Retornar o QR Code recebido
-3. Se connected:
-   a. Retornar { connected: true }
+Ou seja, se o médico configura 14:00-17:00:
+- O último atendimento pode **começar** às 17:00
+- E terminar às 17:20 (se o exame durar 20 min)
+
+**Nova condição:**
+
+```javascript
+while (currentMinutes <= endMinutes) {
+  // Gera slot
+}
 ```
+
+**Novos slots gerados** (14:00-17:00, duração 20 min):
+| Início | Fim |
+|--------|-----|
+| 14:00 | 14:20 |
+| 14:20 | 14:40 |
+| ... | ... |
+| 16:40 | 17:00 |
+| 17:00 | 17:20 ← **NOVO!** |
 
 ---
 
 ### Mudanças Técnicas
 
-#### Arquivo: `supabase/functions/zapi-status/index.ts`
-
-**Antes:**
-```javascript
-// Verificava status
-// Se não conectado, buscava /qr-code/image (passivo)
-```
-
-**Depois:**
-```javascript
-// 1. Verificar status via GET /status
-const statusUrl = `https://api.z-api.io/instances/${instanceId}/token/${zapiToken}/status`;
-
-// 2. Se desconectado, chamar GET /connect para iniciar sessão
-const connectUrl = `https://api.z-api.io/instances/${instanceId}/token/${zapiToken}/connect`;
-
-// 3. A resposta de /connect contém o QR Code diretamente
-// Possíveis formatos de resposta:
-//   - { value: "base64...", base64: true }
-//   - { qrcode: "texto ou base64" }
-//   - Imagem binária
-```
-
-**Lógica de tratamento da resposta:**
-1. Tentar parsear como JSON
-2. Se JSON, extrair `value` (base64) ou `qrcode`
-3. Se binário (image/png), converter para base64
-4. Sempre retornar prefixo `data:image/png;base64,...`
-
-**Tratamento de erros:**
-- Se `/connect` falhar, exibir mensagem clara no frontend
-- Logar erro detalhado para debug
+| Arquivo | Função | Mudança |
+|---------|--------|---------|
+| `supabase/functions/agenda-disponibilidade/index.ts` | `generateTimeSlots()` | `currentMinutes + duracaoMinutos <= endMinutes` → `currentMinutes <= endMinutes` |
+| `supabase/functions/agenda-disponibilidade-categoria/index.ts` | `generateTimeSlots()` | Mesma alteração |
+| `supabase/functions/agenda-reservar/index.ts` | `isWithinRule` | Ajustar validação para aceitar slots que começam no horário limite |
+| `src/components/admin/agenda/AgendaGrid.tsx` | `useMemo` | Manter lógica atual (usa slots existentes do banco) |
+| `src/components/admin/agenda/ProximosHorariosLivres.tsx` | loop de slots | Ajustar para `min <= dayEnd` |
 
 ---
 
-### Fluxo Completo Atualizado
+### Detalhes da Implementação
 
-```text
-┌─────────────────────────────────────────────────────────────┐
-│  Usuário abre /admin/integracao                             │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│  1. Frontend chama zapi-status                              │
-│  2. Edge Function:                                          │
-│     a. GET /status → { connected: false }                   │
-│     b. GET /connect → retorna QR Code                       │
-│     c. Retorna { connected: false, qrCodeBase64: "..." }    │
-│  3. Frontend exibe QR Code                                  │
-│  4. Usuário escaneia com WhatsApp                           │
-│  5. Polling a cada 15s detecta connected = true             │
-│  6. Frontend mostra "Conectado"                             │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
+#### 1. Edge Function `agenda-disponibilidade/index.ts`
+
+**Linha 335, de:**
+```javascript
+while (currentMinutes + duracaoMinutos <= endMinutes) {
 ```
+
+**Para:**
+```javascript
+while (currentMinutes <= endMinutes) {
+```
+
+#### 2. Edge Function `agenda-disponibilidade-categoria/index.ts`
+
+**Linha 260, de:**
+```javascript
+while (currentMinutes + duracaoMinutos <= endMinutes) {
+```
+
+**Para:**
+```javascript
+while (currentMinutes <= endMinutes) {
+```
+
+#### 3. Edge Function `agenda-reservar/index.ts`
+
+**Linhas 217-221, de:**
+```javascript
+const isWithinRule = filteredRules.some(rule => {
+  const ruleStart = timeToMinutes(rule.hora_inicio)
+  const ruleEnd = timeToMinutes(rule.hora_fim)
+  return horaInicioMinutos >= ruleStart && horaFimMinutos <= ruleEnd
+})
+```
+
+**Para:**
+```javascript
+const isWithinRule = filteredRules.some(rule => {
+  const ruleStart = timeToMinutes(rule.hora_inicio)
+  const ruleEnd = timeToMinutes(rule.hora_fim)
+  // Permite que o slot COMECE até o horário limite (hora_fim)
+  return horaInicioMinutos >= ruleStart && horaInicioMinutos <= ruleEnd
+})
+```
+
+#### 4. Componente `ProximosHorariosLivres.tsx`
+
+**Linha 146, de:**
+```javascript
+for (let min = minMinutes; min < dayEnd && freeSlots.length < 8; min += 10) {
+```
+
+**Para:**
+```javascript
+for (let min = minMinutes; min <= dayEnd && freeSlots.length < 8; min += 10) {
+```
+
+**Linhas 155-159, de:**
+```javascript
+const isWithinRules = rulesForDay.some(rule => {
+  const ruleStart = timeToMinutes(rule.hora_inicio);
+  const ruleEnd = timeToMinutes(rule.hora_fim);
+  return min >= ruleStart && min < ruleEnd;
+});
+```
+
+**Para:**
+```javascript
+const isWithinRules = rulesForDay.some(rule => {
+  const ruleStart = timeToMinutes(rule.hora_inicio);
+  const ruleEnd = timeToMinutes(rule.hora_fim);
+  return min >= ruleStart && min <= ruleEnd;
+});
+```
+
+**Linhas 162-166 (schedule openings), de:**
+```javascript
+return min >= openingStart && min < openingEnd;
+```
+
+**Para:**
+```javascript
+return min >= openingStart && min <= openingEnd;
+```
+
+---
+
+### Impacto da Mudança
+
+| Antes | Depois |
+|-------|--------|
+| Médico 14:00-17:00 → Último slot inicia 16:40 | Médico 14:00-17:00 → Último slot inicia 17:00 |
+| O paciente não pode agendar às 17:00 | O paciente pode agendar às 17:00-17:20 |
+
+**Importante:** Isso significa que o médico pode atender **além** do horário configurado em `hora_fim`. Se quiser que o último atendimento termine exatamente às 17:00, deve configurar `hora_fim` = 16:40 (para exames de 20 min).
 
 ---
 
 ### Arquivos a Modificar
 
-| Arquivo | Ação | Descrição |
-|---------|------|-----------|
-| `supabase/functions/zapi-status/index.ts` | MODIFICAR | Usar endpoint `/connect` ao invés de `/qr-code/image` |
-
----
-
-### Observações Importantes
-
-1. **Sem client_token**: A Z-API usa apenas `instanceId` e `token` para autenticação da API. O `client_token` é usado apenas para validar webhooks, não para chamadas de API.
-
-2. **Formato do QR**: O endpoint `/connect` pode retornar o QR em diferentes formatos. A implementação tratará todos os cenários.
-
-3. **Mensagem de erro**: Se houver falha na Z-API, o frontend exibirá a mensagem de erro específica recebida.
-
-4. **Polling mantido**: O polling de 15 segundos continua funcionando para detectar quando a conexão for estabelecida.
+| Arquivo | Ação |
+|---------|------|
+| `supabase/functions/agenda-disponibilidade/index.ts` | Modificar `generateTimeSlots()` |
+| `supabase/functions/agenda-disponibilidade-categoria/index.ts` | Modificar `generateTimeSlots()` |
+| `supabase/functions/agenda-reservar/index.ts` | Modificar validação `isWithinRule` |
+| `src/components/admin/agenda/ProximosHorariosLivres.tsx` | Ajustar loop e verificações de horário |
 
