@@ -274,7 +274,8 @@ Deno.serve(async (req) => {
         const isWithinRule = filteredRules.some(rule => {
           const ruleStart = timeToMinutes(rule.hora_inicio)
           const ruleEnd = timeToMinutes(rule.hora_fim)
-          return horaInicioMinutos >= ruleStart && horaFimMinutos <= ruleEnd
+          // Permite que o slot COMECE até o horário limite (hora_fim)
+          return horaInicioMinutos >= ruleStart && horaInicioMinutos <= ruleEnd
         })
 
         if (!isWithinRule) {
