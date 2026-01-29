@@ -1,137 +1,112 @@
 
-# Plano: Clara pausa automaticamente quando secretária envia mensagem
 
-## Resumo
+# Plano: Corrigir detecção de mensagens manuais da secretária
 
-Quando a secretária (ou qualquer humano) enviar uma mensagem manualmente pelo WhatsApp para um paciente, a Clara pausará automaticamente por **1 hora**. Após esse período, ela volta a responder normalmente sem precisar de ação manual.
+## Problema Identificado
 
-## Como funciona hoje
+A Clara não está detectando quando a secretária responde manualmente porque a **Z-API não está configurada para enviar webhooks de mensagens enviadas pelo próprio WhatsApp**.
 
-1. Mensagens enviadas pela secretária chegam no webhook com `fromMe: true`
-2. O webhook **ignora completamente** essas mensagens
-3. A Clara continua respondendo normalmente ao paciente
+### Diagnóstico
 
-## Como vai funcionar
+Analisei os logs do webhook e encontrei:
+- ✅ **Todas as mensagens nos logs têm `fromMe: false`** (apenas mensagens de pacientes)
+- ❌ **Nenhuma mensagem com `fromMe: true`** sendo recebida
+- ❌ **Nenhum log de "auto-pause" ou "Manual message"** sendo criado
 
-1. Mensagens com `fromMe: true` serão processadas para detectar intervenção humana
-2. O sistema verificará se a mensagem foi enviada pela API (Clara) ou manualmente (secretária)
-3. Se for mensagem manual → cria uma **pausa automática de 1 hora**
-4. Durante a pausa, Clara não responde
-5. Após 1 hora, Clara volta automaticamente
+A lógica de pausa automática está implementada corretamente no código (`zapi-webhook/index.ts`), mas ela nunca é executada porque a Z-API não está enviando os webhooks necessários.
 
-## Mudanças no Banco de Dados
+### Causa Raiz
 
-Adicionar uma nova coluna na tabela `human_handoff_queue`:
+A Z-API tem uma configuração específica que precisa ser habilitada:
+- **Opção**: "Notificar mensagens enviadas por mim" (ou `update-webhook-received-delivery`)
+- **Onde**: Painel administrativo da Z-API ou via API
+- **Efeito**: Quando habilitada, o webhook recebe também as mensagens enviadas manualmente pelo WhatsApp
 
-| Coluna | Tipo | Descrição |
-|--------|------|-----------|
-| `auto_pause_until` | timestamp with time zone | Até quando a Clara deve ficar em silêncio |
+---
 
-Isso permite diferenciar:
-- **Handoff manual** (`status = 'open'`): Clara para até ser resolvido manualmente
-- **Pausa automática** (`auto_pause_until > now()`): Clara para por 1 hora, depois volta sozinha
+## Solução
 
-## Mudanças na Edge Function (zapi-webhook)
+### Opção 1: Habilitar via Painel Z-API (Recomendado)
 
-### 1. Processar mensagens `fromMe`
+1. Acessar o painel da Z-API
+2. Ir em **Instâncias** → clicar no olho para visualizar
+3. Clicar nos 3 pontinhos → **"Editar"**
+4. Marcar a opção **"Notificar mensagens enviadas por mim"**
+5. Salvar
 
-Em vez de ignorar completamente:
+### Opção 2: Habilitar via API (Automático)
 
-```text
-SE fromMe = true:
-   - Verificar se já é mensagem salva pela Clara (comparar provider_message_id)
-   - Se NÃO for da Clara → é mensagem manual da secretária
-   - Criar/atualizar pausa automática de 1 hora para esse telefone
+Podemos adicionar uma chamada na função `zapi-status` para configurar automaticamente essa opção quando o WhatsApp estiver conectado.
+
+---
+
+## Mudanças Técnicas
+
+### 1. Atualizar `zapi-status/index.ts`
+
+Quando verificar que está conectado, chamar o endpoint da Z-API para habilitar a opção:
+
+```
+PUT https://api.z-api.io/instances/{instanceId}/token/{zapiToken}/update-webhook-received-delivery
+Body: { "value": "URL_DO_WEBHOOK" }
 ```
 
-### 2. Verificar pausa antes de processar
+### 2. Melhorar logs no `zapi-webhook/index.ts`
+
+Adicionar logs mais claros para facilitar depuração:
+- Log explícito quando mensagem `fromMe` é recebida
+- Log quando pausa automática é criada/atualizada
+- Log quando Clara é pausada para um telefone
+
+### 3. Verificar se webhook delivery está configurado
+
+Na função `zapi-status`, verificar se a opção está habilitada e mostrar um aviso na interface se não estiver.
+
+---
+
+## Fluxo Esperado Após Correção
 
 ```text
-ANTES de chamar a IA:
-   - Verificar se existe handoff "open" OU pausa automática ativa
-   - Se sim → não processar com IA
+1. Secretária envia mensagem manual pelo WhatsApp
+2. Z-API envia webhook com fromMe: true
+3. Webhook verifica se é da Clara (não existe no banco)
+4. Webhook cria pausa automática de 1 hora
+5. Próxima mensagem do paciente: Clara não responde
+6. Após 1 hora: Clara volta automaticamente
 ```
 
-## Fluxo Visual
-
-```text
-┌─────────────────────────────────────────────────────────────────┐
-│                    MENSAGEM RECEBIDA                            │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-                    ┌─────────────────┐
-                    │   fromMe?       │
-                    └─────────────────┘
-                         │         │
-                    SIM  │         │  NÃO
-                         ▼         │
-              ┌──────────────────┐ │
-              │ É mensagem       │ │
-              │ da Clara (API)?  │ │
-              └──────────────────┘ │
-                  │          │     │
-             SIM  │          │ NÃO │
-                  ▼          ▼     │
-            [Ignorar]   [Criar     │
-                        pausa de   │
-                        1 hora]    │
-                              │    │
-                              │    ▼
-                              │  ┌──────────────────┐
-                              │  │ Handoff open OU  │
-                              │  │ pausa ativa?     │
-                              │  └──────────────────┘
-                              │       │         │
-                              │  SIM  │         │ NÃO
-                              │       ▼         ▼
-                              │  [Ignorar]  [Clara responde]
-                              │
-                              ▼
-                         [FIM]
-```
+---
 
 ## Arquivos a Modificar
 
-1. **Migration SQL** - Adicionar coluna `auto_pause_until`
-2. **`supabase/functions/zapi-webhook/index.ts`** - Lógica de detecção e pausa automática
+1. **`supabase/functions/zapi-status/index.ts`**
+   - Adicionar lógica para configurar webhook de mensagens enviadas
+   - Verificar se configuração está ativa
 
-## Detalhes Técnicos
+2. **`supabase/functions/zapi-webhook/index.ts`**
+   - Melhorar logs para depuração
+   - Garantir que a lógica de fromMe funcione corretamente
 
-### Detectar se mensagem é da Clara vs Secretária
+3. **`src/pages/admin/Integracao.tsx`** (opcional)
+   - Mostrar status da configuração "Notificar mensagens enviadas"
+   - Botão para habilitar automaticamente
 
-Quando a Clara envia mensagem via API, ela salva o `provider_message_id` na tabela `whatsapp_messages`. Podemos usar isso para diferenciar:
+---
 
-- Se `fromMe = true` **E** `provider_message_id` já existe no banco → foi a Clara
-- Se `fromMe = true` **E** `provider_message_id` NÃO existe → foi a secretária
+## Ação Imediata Recomendada
 
-### Lógica da pausa
+Enquanto eu implemento a solução automática, você pode **resolver o problema imediatamente** acessando o painel da Z-API e habilitando a opção "Notificar mensagens enviadas por mim".
 
-```text
-Ao detectar mensagem manual:
-   1. Verificar se já existe pausa para esse telefone
-   2. Se existir → atualizar auto_pause_until = now() + 1 hora
-   3. Se não existir → criar entrada com auto_pause_until = now() + 1 hora
-```
+Isso fará com que a lógica já implementada comece a funcionar.
 
-### Ao verificar se Clara deve responder
+---
 
-```text
-Buscar da tabela human_handoff_queue WHERE:
-   - phone = telefone E
-   - (status = 'open' OU auto_pause_until > now())
-```
+## Validação
 
-## Resultado Esperado
+Após a correção:
+1. Secretária envia mensagem manual para um paciente
+2. Verificar nos logs: deve aparecer "Manual message from secretary detected"
+3. Paciente responde
+4. Verificar nos logs: deve aparecer "Clara is paused for this phone"
+5. Após 1 hora (ou resolver manualmente): Clara volta a responder
 
-1. Paciente conversa com Clara ✅
-2. Secretária vê a conversa e decide intervir
-3. Secretária envia mensagem manual pelo WhatsApp
-4. Sistema detecta automaticamente e **pausa Clara por 1 hora**
-5. Secretária conversa com paciente livremente
-6. Após 1 hora → Clara volta automaticamente
-7. Se secretária enviar outra mensagem antes de 1 hora → reinicia o timer
-
-## Bônus: Badge na interface
-
-O badge vermelho no menu continuará funcionando, mas agora também poderá mostrar pausas automáticas (opcional - podemos fazer depois se quiser).
