@@ -111,11 +111,11 @@ Deno.serve(async (req) => {
       const webhookUrl = `${supabaseUrl}/functions/v1/zapi-webhook?token=${clientToken || zapiToken}`;
       
       try {
-        console.log("Configuring webhook for sent message notifications...");
+        console.log("Configuring webhooks for sent message detection...");
         
-        // Update webhook to receive delivery notifications (messages we send)
-        const updateWebhookUrl = `https://api.z-api.io/instances/${instanceId}/token/${zapiToken}/update-webhook-delivery`;
-        const updateRes = await fetch(updateWebhookUrl, {
+        // CRITICAL: update-webhook-send is for messages WE SEND manually (fromMe: true)
+        const updateSendUrl = `https://api.z-api.io/instances/${instanceId}/token/${zapiToken}/update-webhook-send`;
+        const sendRes = await fetch(updateSendUrl, {
           method: "PUT",
           headers: {
             ...zapiHeaders,
@@ -124,10 +124,10 @@ Deno.serve(async (req) => {
           body: JSON.stringify({ value: webhookUrl }),
         });
         
-        if (updateRes.ok) {
-          console.log("Webhook delivery configured successfully");
+        if (sendRes.ok) {
+          console.log("✅ Webhook SEND configured (will receive fromMe messages)");
         } else {
-          console.log("Could not configure webhook delivery:", await updateRes.text());
+          console.log("❌ Could not configure webhook send:", await sendRes.text());
         }
 
         // Also update the received webhook to ensure it's configured
@@ -142,9 +142,9 @@ Deno.serve(async (req) => {
         });
         
         if (receivedRes.ok) {
-          console.log("Webhook received configured successfully");
+          console.log("✅ Webhook RECEIVED configured");
         } else {
-          console.log("Could not configure webhook received:", await receivedRes.text());
+          console.log("❌ Could not configure webhook received:", await receivedRes.text());
         }
       } catch (e) {
         console.error("Error configuring webhooks:", e);
