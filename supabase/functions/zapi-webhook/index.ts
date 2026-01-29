@@ -109,10 +109,16 @@ Deno.serve(async (req) => {
     const senderName = body.senderName || body.pushName || body.notifyName || null;
 
     // Handle fromMe messages (could be Clara or Secretary)
-    if (body.fromMe) {
+    if (body.fromMe === true) {
+      console.log("📤 MENSAGEM ENVIADA (fromMe=true) detectada para telefone:", phone);
+      console.log("   - messageId:", messageId);
+      console.log("   - isOld:", body.isOld);
+      console.log("   - fromApi:", body.fromApi);
+      console.log("   - waitingMessage:", body.waitingMessage);
+      
       // Check if message is old or from history - ignore these
       if (body.isOld || body.isFromHistory || body.waitingMessage) {
-        console.log("Ignoring fromMe message: isOld, isFromHistory, or waitingMessage");
+        console.log("⏭️ Ignorando fromMe: isOld, isFromHistory, ou waitingMessage");
         return new Response(
           JSON.stringify({ success: true, ignored: true }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -121,9 +127,10 @@ Deno.serve(async (req) => {
 
       // Check if this message was sent by Clara (already exists in our database)
       const isFromClara = await isMessageFromClara(supabase, messageId);
+      console.log("   - isFromClara (exists in DB):", isFromClara);
       
       if (isFromClara) {
-        console.log("Message is from Clara (API), ignoring");
+        console.log("✅ Mensagem é da Clara (via API), ignorando");
         return new Response(
           JSON.stringify({ success: true, ignored: true, reason: "from_clara" }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -131,11 +138,13 @@ Deno.serve(async (req) => {
       }
 
       // This is a manual message from the secretary - create/update auto-pause
-      console.log("Manual message from secretary detected, creating 1-hour auto-pause");
+      console.log("🔴 MENSAGEM MANUAL DA SECRETÁRIA DETECTADA!");
+      console.log("   - Criando pausa automática de 1 hora para:", phone);
       await createOrUpdateAutoPause(supabase, phone, null);
+      console.log("✅ Pausa automática criada/atualizada com sucesso");
       
       return new Response(
-        JSON.stringify({ success: true, autoPauseCreated: true }),
+        JSON.stringify({ success: true, autoPauseCreated: true, phone }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -203,9 +212,11 @@ Deno.serve(async (req) => {
     // Check if Clara should be paused (handoff open OR auto-pause active)
     const isPaused = await shouldPauseClara(supabase, phone);
     if (isPaused) {
-      console.log("Clara is paused for this phone (handoff or auto-pause), skipping AI processing");
+      console.log("⏸️ CLARA PAUSADA para telefone:", phone);
+      console.log("   - Motivo: handoff ativo ou pausa automática (secretária respondendo)");
+      console.log("   - A Clara NÃO responderá esta mensagem");
       return new Response(
-        JSON.stringify({ success: true, handoffActive: true }),
+        JSON.stringify({ success: true, handoffActive: true, claraPaused: true }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
