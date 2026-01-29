@@ -105,10 +105,53 @@ Deno.serve(async (req) => {
       statusError = "Error connecting to Z-API";
     }
 
-    // If connected, return success
+    // If connected, configure webhook for sent messages and return success
     if (connected) {
+      // Configure Z-API to notify us of messages sent (so we detect secretary manual messages)
+      const webhookUrl = `${supabaseUrl}/functions/v1/zapi-webhook?token=${clientToken || zapiToken}`;
+      
+      try {
+        console.log("Configuring webhook for sent message notifications...");
+        
+        // Update webhook to receive delivery notifications (messages we send)
+        const updateWebhookUrl = `https://api.z-api.io/instances/${instanceId}/token/${zapiToken}/update-webhook-delivery`;
+        const updateRes = await fetch(updateWebhookUrl, {
+          method: "PUT",
+          headers: {
+            ...zapiHeaders,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ value: webhookUrl }),
+        });
+        
+        if (updateRes.ok) {
+          console.log("Webhook delivery configured successfully");
+        } else {
+          console.log("Could not configure webhook delivery:", await updateRes.text());
+        }
+
+        // Also update the received webhook to ensure it's configured
+        const updateReceivedUrl = `https://api.z-api.io/instances/${instanceId}/token/${zapiToken}/update-webhook-received`;
+        const receivedRes = await fetch(updateReceivedUrl, {
+          method: "PUT",
+          headers: {
+            ...zapiHeaders,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ value: webhookUrl }),
+        });
+        
+        if (receivedRes.ok) {
+          console.log("Webhook received configured successfully");
+        } else {
+          console.log("Could not configure webhook received:", await receivedRes.text());
+        }
+      } catch (e) {
+        console.error("Error configuring webhooks:", e);
+      }
+
       return new Response(
-        JSON.stringify({ connected: true, qrCodeBase64: null }),
+        JSON.stringify({ connected: true, qrCodeBase64: null, webhookConfigured: true }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
