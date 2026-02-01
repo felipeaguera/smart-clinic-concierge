@@ -95,6 +95,21 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json();
+    
+    // 🔔 LOG ABSOLUTO - Primeiro log antes de qualquer filtro
+    console.log("🔔 WEBHOOK ENTRADA RAW:", JSON.stringify({
+      fromMe: body.fromMe,
+      fromMeType: typeof body.fromMe,
+      self: body.self,
+      phone: body.phone || body.from,
+      type: body.type,
+      event: body.event,
+      isStatusMessage: body.isStatusMessage,
+      isOld: body.isOld,
+      fromApi: body.fromApi,
+      messageId: body.messageId || body.id,
+    }, null, 2));
+    
     console.log("Webhook received:", JSON.stringify(body, null, 2));
 
     // Initialize Supabase with service role
@@ -109,8 +124,18 @@ Deno.serve(async (req) => {
     const senderName = body.senderName || body.pushName || body.notifyName || null;
 
     // Handle fromMe messages (could be Clara or Secretary)
-    if (body.fromMe === true) {
-      console.log("📤 MENSAGEM ENVIADA (fromMe=true) detectada para telefone:", phone);
+    // Detectar fromMe em múltiplos formatos (boolean, string, ou self)
+    const isFromMe = body.fromMe === true || body.fromMe === "true" || body.self === true;
+    
+    console.log("📊 Análise fromMe:", {
+      "body.fromMe": body.fromMe,
+      "typeof body.fromMe": typeof body.fromMe,
+      "body.self": body.self,
+      "isFromMe (calculado)": isFromMe,
+    });
+    
+    if (isFromMe) {
+      console.log("📤 MENSAGEM ENVIADA (fromMe detectado) para telefone:", phone);
       console.log("   - messageId:", messageId);
       console.log("   - isOld:", body.isOld);
       console.log("   - fromApi:", body.fromApi);
@@ -138,10 +163,11 @@ Deno.serve(async (req) => {
       }
 
       // This is a manual message from the secretary - create/update auto-pause
-      console.log("🔴 MENSAGEM MANUAL DA SECRETÁRIA DETECTADA!");
-      console.log("   - Criando pausa automática de 1 hora para:", phone);
+      console.log("🔴🔴🔴 MENSAGEM MANUAL DA SECRETÁRIA DETECTADA! 🔴🔴🔴");
+      console.log("   - Telefone:", phone);
+      console.log("   - Criando pausa automática de 1 hora...");
       await createOrUpdateAutoPause(supabase, phone, null);
-      console.log("✅ Pausa automática criada/atualizada com sucesso");
+      console.log("✅ Pausa automática criada/atualizada com sucesso para:", phone);
       
       return new Response(
         JSON.stringify({ success: true, autoPauseCreated: true, phone }),
