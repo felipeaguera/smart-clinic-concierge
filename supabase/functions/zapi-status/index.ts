@@ -112,8 +112,9 @@ Deno.serve(async (req) => {
       
       try {
         console.log("Configuring webhooks for sent message detection...");
+        console.log("Webhook URL:", webhookUrl);
         
-        // CRITICAL: update-webhook-send is for messages WE SEND manually (fromMe: true)
+        // 1. Configure webhook for SENT messages (fromMe: true)
         const updateSendUrl = `https://api.z-api.io/instances/${instanceId}/token/${zapiToken}/update-webhook-send`;
         const sendRes = await fetch(updateSendUrl, {
           method: "PUT",
@@ -125,12 +126,12 @@ Deno.serve(async (req) => {
         });
         
         if (sendRes.ok) {
-          console.log("✅ Webhook SEND configured (will receive fromMe messages)");
+          console.log("✅ Webhook SEND configurado");
         } else {
-          console.log("❌ Could not configure webhook send:", await sendRes.text());
+          console.log("❌ Erro webhook send:", await sendRes.text());
         }
 
-        // Also update the received webhook to ensure it's configured
+        // 2. Configure webhook for RECEIVED messages
         const updateReceivedUrl = `https://api.z-api.io/instances/${instanceId}/token/${zapiToken}/update-webhook-received`;
         const receivedRes = await fetch(updateReceivedUrl, {
           method: "PUT",
@@ -142,10 +143,30 @@ Deno.serve(async (req) => {
         });
         
         if (receivedRes.ok) {
-          console.log("✅ Webhook RECEIVED configured");
+          console.log("✅ Webhook RECEIVED configurado");
         } else {
-          console.log("❌ Could not configure webhook received:", await receivedRes.text());
+          console.log("❌ Erro webhook received:", await receivedRes.text());
         }
+
+        // 3. CRITICAL: Enable "Notify sent by me" option via API
+        // This ensures the toggle in Z-API dashboard is activated
+        const notifySentByMeUrl = `https://api.z-api.io/instances/${instanceId}/token/${zapiToken}/update-notify-sent-by-me`;
+        const notifyRes = await fetch(notifySentByMeUrl, {
+          method: "PUT",
+          headers: {
+            ...zapiHeaders,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ value: true }),
+        });
+        
+        if (notifyRes.ok) {
+          console.log("✅ Notify sent by me ATIVADO via API");
+        } else {
+          console.log("⚠️ Não foi possível ativar notify-sent-by-me via API:", await notifyRes.text());
+          console.log("   (Isso é OK se já está ativado no painel da Z-API)");
+        }
+
       } catch (e) {
         console.error("Error configuring webhooks:", e);
       }
