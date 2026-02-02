@@ -141,6 +141,8 @@ export function SelecionarNovoHorarioModal({
       .sort((a, b) => timeToMinutes(a.hora_inicio) - timeToMinutes(b.hora_inicio));
 
     // Gera slots livres
+    // IMPORTANTE: hora_fim é o ÚLTIMO horário válido para INÍCIO
+    // Então um exame pode COMEÇAR em dayEnd (e terminar depois)
     const slots: { time: string; endTime: string }[] = [];
     let cursor = dayStart;
 
@@ -161,7 +163,9 @@ export function SelecionarNovoHorarioModal({
     }
 
     // Slots no final do dia
-    while (cursor + examDuration <= dayEnd) {
+    // IMPORTANTE: Permitir começar no dayEnd (último horário válido)
+    // O exame pode terminar DEPOIS do hora_fim configurado
+    while (cursor <= dayEnd) {
       slots.push({
         time: minutesToTime(cursor),
         endTime: minutesToTime(cursor + examDuration),

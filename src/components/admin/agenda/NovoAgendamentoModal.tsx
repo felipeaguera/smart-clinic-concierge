@@ -97,23 +97,42 @@ export function NovoAgendamentoModal({
       ? exam.doctor_id === doctor.id
       : true; // Ultrassom ainda é global (doctor_id = null ou qualquer)
     
-    // Calcula quanto tempo resta a partir do horário escolhido
+    // IMPORTANTE: hora_fim define o ÚLTIMO horário de INÍCIO válido
+    // Se o usuário clicou em um slot às 19:00 (último horário), 
+    // permitimos agendar exames que caibam a partir desse horário
+    // O exame pode terminar DEPOIS do hora_fim configurado
     const chosenMinutes = timeToMinutes(chosenTime);
     const slotEndMinutes = timeToMinutes(slotEndTime);
-    const remainingMinutes = slotEndMinutes - chosenMinutes;
     
+    // Se chosenTime == slotEndTime (último slot), o exame pode ser agendado
+    // desde que seja o último horário válido (a duração pode extrapolar)
+    const isLastSlot = chosenMinutes >= slotEndMinutes;
+    
+    if (isLastSlot) {
+      // No último slot, qualquer exame pode ser agendado (sem limite de tempo)
+      return categoryMatch && doctorMatch;
+    }
+    
+    // Para outros slots, verificar se cabe no tempo restante
+    const remainingMinutes = slotEndMinutes - chosenMinutes;
     return categoryMatch && doctorMatch && exam.duracao_minutos <= remainingMinutes;
   });
 
-  // Gera opções de horário dentro do slot livre (intervalos de 15 min)
+  // Gera opções de horário dentro do slot livre (intervalos de 10 min)
+  // IMPORTANTE: hora_fim é o ÚLTIMO horário válido para INÍCIO, então incluímos ele (<=)
   const timeOptions = useMemo(() => {
     const options: string[] = [];
     const startMinutes = timeToMinutes(selectedTime);
     const endMinutes = timeToMinutes(slotEndTime);
     
-    // Gera horários de 10 em 10 minutos
-    for (let m = startMinutes; m < endMinutes; m += 10) {
+    // Gera horários de 10 em 10 minutos, incluindo o último (<=)
+    for (let m = startMinutes; m <= endMinutes; m += 10) {
       options.push(minutesToTime(m));
+    }
+    
+    // Se não gerou nenhum ou está vazio, pelo menos o horário inicial
+    if (options.length === 0) {
+      options.push(selectedTime);
     }
     
     return options;
