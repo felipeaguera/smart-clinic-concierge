@@ -95,7 +95,11 @@ export function AgendaTimeGrid({
       return [];
     }
 
-    // Find day range (combining rules and openings)
+    // Valid appointments (not cancelled)
+    const validApts = appointments.filter(apt => apt.status !== 'cancelado');
+
+    // Find day range (combining rules, openings, AND existing appointments)
+    // This ensures encaixes outside work hours are still visible
     let dayStart = Infinity;
     let dayEnd = 0;
     
@@ -113,12 +117,17 @@ export function AgendaTimeGrid({
       if (end > dayEnd) dayEnd = end;
     }
 
+    // IMPORTANT: Expand range to include any appointments (especially encaixes) outside work hours
+    for (const apt of validApts) {
+      const aptStart = timeToMinutes(apt.hora_inicio);
+      const aptEnd = timeToMinutes(apt.hora_fim);
+      if (aptStart < dayStart) dayStart = aptStart;
+      if (aptEnd > dayEnd) dayEnd = aptEnd;
+    }
+
     // Round to 10 min intervals
     dayStart = Math.floor(dayStart / 10) * 10;
     dayEnd = Math.ceil(dayEnd / 10) * 10;
-
-    // Valid appointments (not cancelled)
-    const validApts = appointments.filter(apt => apt.status !== 'cancelado');
 
     // Generate rows every 10 minutes
     // IMPORTANT: hora_fim defines the LAST possible START time for an appointment
