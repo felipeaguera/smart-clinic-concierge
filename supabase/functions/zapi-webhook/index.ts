@@ -19,18 +19,22 @@ async function isMessageFromClara(supabase: any, messageId: string): Promise<boo
 }
 
 // Helper to create or update auto-pause for 1 hour
-async function createOrUpdateAutoPause(supabase: any, phone: string, senderName: string | null) {
-  // IMPORTANT: Only create pauses for real phone numbers, not internal @lid identifiers
-  if (!phone || phone.includes("@lid") || phone.includes("@")) {
-    console.log("⏭️ Ignorando auto-pause para ID interno:", phone);
-    return;
+async function createOrUpdateAutoPause(
+  supabase: any,
+  phone: string,
+  senderName: string | null
+): Promise<boolean> {
+  // Safety: require a real phone number (digits only is the expectation in our DB)
+  if (!phone || phone.includes("@")) {
+    console.log("⏭️ Ignorando auto-pause: phone inválido:", phone);
+    return false;
   }
-  
+
   // Also ignore the clinic's own number (connectedPhone)
   const connectedPhone = Deno.env.get("CLINIC_PHONE") || "5515981342319";
   if (phone === connectedPhone) {
     console.log("⏭️ Ignorando auto-pause para o próprio número da clínica:", phone);
-    return;
+    return false;
   }
   
   const oneHourFromNow = new Date(Date.now() + 60 * 60 * 1000).toISOString();
@@ -50,6 +54,7 @@ async function createOrUpdateAutoPause(supabase: any, phone: string, senderName:
       .update({ auto_pause_until: oneHourFromNow })
       .eq("id", existingHandoff.id);
     console.log("Updated auto-pause for phone:", phone);
+    return true;
   } else {
     // Create new entry with auto-pause (status = 'resolved' since it's automatic)
     await supabase.from("human_handoff_queue").insert({
@@ -59,7 +64,39 @@ async function createOrUpdateAutoPause(supabase: any, phone: string, senderName:
       auto_pause_until: oneHourFromNow,
     });
     console.log("Created auto-pause for phone:", phone);
+    return true;
   }
+}
+
+// When Z-API sends a manual secretary message, sometimes it uses a @lid identifier.
+// In that case, we can resolve the real patient phone by looking up the referenced message.
+async function resolveRealPhoneFromReference(
+  supabase: any,
+  payload: any
+): Promise<string | null> {
+  const phoneRaw = payload?.phone || payload?.from || null;
+  if (typeof phoneRaw === "string" && !phoneRaw.includes("@")) return phoneRaw;
+
+  const referenceMessageId =
+    payload?.referenceMessageId ||
+    payload?.reference_message_id ||
+    payload?.quotedMessageId ||
+    null;
+
+  if (!referenceMessageId) return null;
+
+  const { data: referencedMsg, error } = await supabase
+    .from("whatsapp_messages")
+    .select("phone")
+    .eq("provider_message_id", referenceMessageId)
+    .maybeSingle();
+
+  if (error) {
+    console.log("⚠️ Falha ao resolver phone via referenceMessageId:", error);
+    return null;
+  }
+
+  return referencedMsg?.phone ?? null;
 }
 
 // Helper to check if Clara should be paused (handoff open OR auto-pause active)
@@ -223,14 +260,27 @@ Deno.serve(async (req) => {
       // MENSAGEM MANUAL DA SECRETÁRIA DETECTADA!
       // ============================================================
       console.log("🔴🔴🔴 MENSAGEM MANUAL DA SECRETÁRIA DETECTADA! 🔴🔴🔴");
-      console.log("   - Telefone:", phone);
+      // Resolve real patient phone when Z-API provides a @lid identifier
+      const resolvedPhone = (await resolveRealPhoneFromReference(supabase, body)) || phone;
+      console.log("   - Telefone (raw):", phone);
+      console.log("   - Telefone (resolvido):", resolvedPhone);
       console.log("   - Texto:", text?.substring(0, 50) || "(vazio)");
       console.log("   - Criando pausa automática de 1 hora...");
-      await createOrUpdateAutoPause(supabase, phone, null);
-      console.log("✅ Pausa automática criada/atualizada com sucesso para:", phone);
+
+      const pauseCreated = await createOrUpdateAutoPause(supabase, resolvedPhone, null);
+      if (pauseCreated) {
+        console.log("✅ Pausa automática criada/atualizada com sucesso para:", resolvedPhone);
+      } else {
+        console.log(
+          "⚠️ Não foi possível criar pausa automática (sem phone real). Raw:",
+          phone,
+          "Resolved:",
+          resolvedPhone
+        );
+      }
       
       return new Response(
-        JSON.stringify({ success: true, autoPauseCreated: true, phone }),
+        JSON.stringify({ success: true, autoPauseCreated: pauseCreated, phone: resolvedPhone }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
