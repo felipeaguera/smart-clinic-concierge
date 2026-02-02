@@ -20,6 +20,19 @@ async function isMessageFromClara(supabase: any, messageId: string): Promise<boo
 
 // Helper to create or update auto-pause for 1 hour
 async function createOrUpdateAutoPause(supabase: any, phone: string, senderName: string | null) {
+  // IMPORTANT: Only create pauses for real phone numbers, not internal @lid identifiers
+  if (!phone || phone.includes("@lid") || phone.includes("@")) {
+    console.log("⏭️ Ignorando auto-pause para ID interno:", phone);
+    return;
+  }
+  
+  // Also ignore the clinic's own number (connectedPhone)
+  const connectedPhone = Deno.env.get("CLINIC_PHONE") || "5515981342319";
+  if (phone === connectedPhone) {
+    console.log("⏭️ Ignorando auto-pause para o próprio número da clínica:", phone);
+    return;
+  }
+  
   const oneHourFromNow = new Date(Date.now() + 60 * 60 * 1000).toISOString();
   
   // Check if there's already a handoff entry for this phone
@@ -51,16 +64,44 @@ async function createOrUpdateAutoPause(supabase: any, phone: string, senderName:
 
 // Helper to check if Clara should be paused (handoff open OR auto-pause active)
 async function shouldPauseClara(supabase: any, phone: string): Promise<boolean> {
+  // Only check real phone numbers (not internal @lid identifiers)
+  if (!phone || phone.includes("@lid")) {
+    return false;
+  }
+  
   const now = new Date().toISOString();
   
-  const { data: activeHandoff } = await supabase
+  // Check for OPEN handoff (manual handoff request)
+  const { data: openHandoff } = await supabase
     .from("human_handoff_queue")
-    .select("id, status, auto_pause_until")
+    .select("id")
     .eq("phone", phone)
-    .or(`status.eq.open,auto_pause_until.gt.${now}`)
+    .eq("status", "open")
     .maybeSingle();
   
-  return !!activeHandoff;
+  if (openHandoff) {
+    console.log("🔴 Handoff OPEN encontrado para:", phone);
+    return true;
+  }
+  
+  // Check for active auto-pause (secretary intervened recently)
+  // IMPORTANT: Only pause if auto_pause_until is in the future AND this is not a resolved handoff
+  const { data: autoPause } = await supabase
+    .from("human_handoff_queue")
+    .select("id, auto_pause_until")
+    .eq("phone", phone)
+    .eq("status", "resolved")
+    .gt("auto_pause_until", now)
+    .order("auto_pause_until", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  
+  if (autoPause) {
+    console.log("⏸️ Auto-pause ativo para:", phone, "até:", autoPause.auto_pause_until);
+    return true;
+  }
+  
+  return false;
 }
 
 Deno.serve(async (req) => {
