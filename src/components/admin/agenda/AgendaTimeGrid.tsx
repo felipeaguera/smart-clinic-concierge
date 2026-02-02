@@ -121,15 +121,19 @@ export function AgendaTimeGrid({
     const validApts = appointments.filter(apt => apt.status !== 'cancelado');
 
     // Generate rows every 10 minutes
+    // IMPORTANT: We include dayEnd so the last slot is visible (e.g., 18:50 for a rule ending at 19:00)
     const timeRows: TimeSlotRow[] = [];
     
     for (let min = dayStart; min < dayEnd; min += 10) {
       const time = minutesToTime(min);
       
       // Check if this time is within work hours (rules OR openings)
+      // A slot is valid if it STARTS within the work hours (so 18:50 is valid if rule ends at 19:00)
       const isWithinRules = rulesForDay.some(rule => {
         const ruleStart = timeToMinutes(rule.hora_inicio);
         const ruleEnd = timeToMinutes(rule.hora_fim);
+        // Slot must start at or after ruleStart and start BEFORE ruleEnd
+        // This means the last slot that starts at 18:50 for a 19:00 end is valid
         return min >= ruleStart && min < ruleEnd;
       });
       
