@@ -40,6 +40,16 @@ EXEMPLO DE ERRO A EVITAR:
 - ❌ ERRADO: "Olá! Eu sou a Clara! O que você gostaria de agendar?"
 - ✅ CERTO: "Perfeito! Vou reservar às 08:00. Qual é o seu nome completo para confirmar?"
 
+Se o paciente perguntar sobre endereço, localização, como chegar ou horário de funcionamento, a Clara deve responder sempre com o texto abaixo, sem variações:
+
+Endereço
+Rua Santo Antonio, 361
+Centro – Pilar do Sul/SP
+CEP: 18185-057
+
+Horário de Funcionamento
+Segunda a Sexta: 8h às 18h
+
 ═══════════════════════════════════════
 1. REGRAS INVIOLÁVEIS
 ═══════════════════════════════════════
@@ -367,15 +377,15 @@ interface Message {
 function selectSpacedSlots(slots: any[], maxSlots: number = 3, minGapMinutes: number = 30): any[] {
   if (!Array.isArray(slots) || slots.length === 0) return [];
   if (slots.length <= maxSlots) return slots;
-  
+
   const timeToMinutes = (time: string) => {
     const [h, m] = (time || "").split(":").map(Number);
     return (h || 0) * 60 + (m || 0);
   };
-  
+
   const result: any[] = [slots[0]];
   let lastMinutes = timeToMinutes(slots[0]?.hora_inicio);
-  
+
   for (let i = 1; i < slots.length && result.length < maxSlots; i++) {
     const currentMinutes = timeToMinutes(slots[i]?.hora_inicio);
     if (currentMinutes - lastMinutes >= minGapMinutes) {
@@ -383,7 +393,7 @@ function selectSpacedSlots(slots: any[], maxSlots: number = 3, minGapMinutes: nu
       lastMinutes = currentMinutes;
     }
   }
-  
+
   // Se não conseguiu preencher, pega os primeiros mesmo
   if (result.length < maxSlots) {
     for (const slot of slots) {
@@ -392,7 +402,7 @@ function selectSpacedSlots(slots: any[], maxSlots: number = 3, minGapMinutes: nu
       }
     }
   }
-  
+
   return result.sort((a, b) => timeToMinutes(a.hora_inicio) - timeToMinutes(b.hora_inicio));
 }
 
@@ -695,17 +705,17 @@ serve(async (req) => {
     }
 
     if (!Array.isArray(messages)) {
-      return new Response(
-        JSON.stringify({ error: "Invalid payload: messages" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
+      return new Response(JSON.stringify({ error: "Invalid payload: messages" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     if (messages.length === 0) {
-      return new Response(
-        JSON.stringify({ error: "Empty conversation" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
+      return new Response(JSON.stringify({ error: "Empty conversation" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
@@ -849,19 +859,20 @@ ${doctors
     let info = `• ${d.nome} (${d.especialidade}) [ID: ${d.id}]`;
     if (d.prompt_ia) {
       // Detectar se há credenciais no prompt_ia
-      const hasCredenciais = d.prompt_ia.includes('[CREDENCIAIS]') || 
-                             d.prompt_ia.toLowerCase().includes('formação') || 
-                             d.prompt_ia.toLowerCase().includes('pós-graduação') ||
-                             d.prompt_ia.toLowerCase().includes('pos-graduacao') ||
-                             d.prompt_ia.toLowerCase().includes('especialização') ||
-                             d.prompt_ia.toLowerCase().includes('especializacao') ||
-                             d.prompt_ia.toLowerCase().includes('mestrado') ||
-                             d.prompt_ia.toLowerCase().includes('doutorado') ||
-                             d.prompt_ia.toLowerCase().includes('experiência') ||
-                             d.prompt_ia.toLowerCase().includes('anos de');
-      
+      const hasCredenciais =
+        d.prompt_ia.includes("[CREDENCIAIS]") ||
+        d.prompt_ia.toLowerCase().includes("formação") ||
+        d.prompt_ia.toLowerCase().includes("pós-graduação") ||
+        d.prompt_ia.toLowerCase().includes("pos-graduacao") ||
+        d.prompt_ia.toLowerCase().includes("especialização") ||
+        d.prompt_ia.toLowerCase().includes("especializacao") ||
+        d.prompt_ia.toLowerCase().includes("mestrado") ||
+        d.prompt_ia.toLowerCase().includes("doutorado") ||
+        d.prompt_ia.toLowerCase().includes("experiência") ||
+        d.prompt_ia.toLowerCase().includes("anos de");
+
       info += `\n  ⚠️ INSTRUÇÕES OBRIGATÓRIAS PARA ESTE MÉDICO (siga com prioridade máxima):\n  ${d.prompt_ia}`;
-      
+
       if (hasCredenciais) {
         info += `\n  💡 CREDENCIAIS DETECTADAS: Você pode mencionar ao paciente de forma natural (ver Seção 10)`;
       }
@@ -1361,28 +1372,30 @@ ${examTypes
         } else if (functionName === "reservar_horario") {
           // VALIDAÇÃO CRÍTICA: Rejeitar nomes que são placeholders ANTES de chamar a API
           const invalidPatientNames = [
-            '[nome_completo_do_paciente]',
-            '[nome do paciente]',
-            '[nome_paciente]',
-            '[nome completo]',
-            '[nome]',
-            'nome_completo_do_paciente',
-            'nome do paciente',
-            'nome_paciente',
-            'nome completo',
-            'paciente',
+            "[nome_completo_do_paciente]",
+            "[nome do paciente]",
+            "[nome_paciente]",
+            "[nome completo]",
+            "[nome]",
+            "nome_completo_do_paciente",
+            "nome do paciente",
+            "nome_paciente",
+            "nome completo",
+            "paciente",
           ];
-          
-          const patientName = String(args.paciente_nome || '').toLowerCase().trim();
+
+          const patientName = String(args.paciente_nome || "")
+            .toLowerCase()
+            .trim();
           const isPlaceholder = invalidPatientNames.some(
-            placeholder => patientName === placeholder || patientName.includes('[') || patientName.includes(']')
+            (placeholder) => patientName === placeholder || patientName.includes("[") || patientName.includes("]"),
           );
-          
+
           if (isPlaceholder || patientName.length < 3) {
             console.log("Nome do paciente parece ser placeholder - rejeitando:", args.paciente_nome);
             result = {
               error: "Nome do paciente inválido. Pergunte o nome completo real do paciente antes de reservar.",
-              code: "PLACEHOLDER_NAME_REJECTED"
+              code: "PLACEHOLDER_NAME_REJECTED",
             };
           } else {
             const reservarResponse = await fetch(`${supabaseUrl}/functions/v1/agenda-reservar`, {
