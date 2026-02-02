@@ -20,13 +20,21 @@ export function useRealtimeScheduleOpenings(doctorId: string | null, dateStr: st
         },
         (payload) => {
           console.log('[Realtime] Schedule opening change detected:', payload);
-          // Invalidar cache para forçar refetch das agendas extras
+          
+          // Invalidar todas as queries relacionadas a schedule_openings
+          // Query específica para o grid: ['schedule_openings', doctorId, dateStr]
           queryClient.invalidateQueries({
-            queryKey: ['schedule_openings', doctorId],
+            queryKey: ['schedule_openings', doctorId, dateStr],
           });
-          // Também invalidar a query geral de agendas extras para a data
+          
+          // Query para ProximosHorariosLivres: ['doctor_future_openings', doctorId]
           queryClient.invalidateQueries({
-            queryKey: ['schedule_openings'],
+            queryKey: ['doctor_future_openings', doctorId],
+          });
+          
+          // Query geral para filtro de médicos: ['all_schedule_openings']
+          queryClient.invalidateQueries({
+            queryKey: ['all_schedule_openings'],
           });
         }
       )
