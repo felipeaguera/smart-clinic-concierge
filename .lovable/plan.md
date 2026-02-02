@@ -1,84 +1,99 @@
 
-# Plano: Garantir que a Clara pare quando a secretária responde
 
-## O que você configurou está CORRETO
+# Plano: Sincronização em Tempo Real Completa da Agenda
 
-Na sua imagem da Z-API:
-- "Ao enviar" - tem URL configurada
-- "Ao receber" - tem URL configurada  
-- "Notificar as enviadas por mim também" - ATIVADO (toggle verde)
+## O que você quer
 
-Isso é exatamente o que precisamos!
+Quando uma secretária marcar um exame ou adicionar algo na agenda, **todas as outras secretárias** que estiverem com a plataforma aberta devem ver a atualização automaticamente, sem precisar atualizar a página.
 
 ---
 
-## Como funciona (explicação simples)
+## Situação Atual
 
-Imagine assim:
+| Componente | Status |
+|------------|--------|
+| Tabela `appointments` no realtime | Habilitada |
+| Hook `useRealtimeAppointments` | Implementado |
+| Tabela `schedule_openings` no realtime | **NÃO habilitada** |
 
-| Situação | O que acontece |
-|----------|----------------|
-| Paciente manda mensagem | Clara responde automaticamente |
-| Secretária manda mensagem manual | Clara **para por 1 hora** |
-| Paciente responde durante essa 1 hora | Clara **não responde** (secretária assumiu) |
-| Depois de 1 hora | Clara volta a responder automaticamente |
-
----
-
-## O problema identificado
-
-Analisando os dados do banco, vi que:
-- A tabela que controla a pausa tem o campo `auto_pause_until = null` para todos os registros
-- Isso significa que a função de "pausar Clara" **nunca foi executada**
-
-Duas possibilidades:
-1. As mensagens `fromMe=true` não estão chegando ao webhook
-2. As mensagens estão chegando mas em formato diferente do esperado
+O sistema **já tem** sincronização em tempo real para agendamentos (appointments), mas precisamos verificar se está funcionando corretamente e adicionar também as agendas extras (schedule_openings).
 
 ---
 
-## A correção
+## O que vou fazer
 
-Vou fazer duas melhorias no código:
+### 1. Habilitar realtime para `schedule_openings`
 
-### 1. Adicionar log detalhado no início do webhook
+Quando uma secretária adicionar uma data extra de atendimento, as outras secretárias verão automaticamente.
 
-Antes de qualquer verificação, vou registrar TODOS os dados que chegam. Assim podemos ver exatamente o que a Z-API está enviando.
+```sql
+ALTER PUBLICATION supabase_realtime ADD TABLE public.schedule_openings;
+```
 
-### 2. Melhorar a detecção de mensagens manuais
+### 2. Criar hook para sincronização de agendas extras
 
-A Z-API pode enviar o `fromMe` em diferentes formatos:
-- `fromMe: true` (booleano)
-- `fromMe: "true"` (texto)
+Novo hook `useRealtimeScheduleOpenings` para atualizar a lista de agendas extras em tempo real.
 
-Vou garantir que o código reconheça ambos.
+### 3. Melhorar o hook existente de appointments
 
----
-
-## Resultado esperado
-
-Após a correção:
-
-1. Você envia uma mensagem manual pelo WhatsApp
-2. O sistema detecta e mostra no log: "MENSAGEM MANUAL DA SECRETÁRIA"
-3. O sistema pausa a Clara por 1 hora para aquele número
-4. Paciente responde → Clara NÃO responde
-5. Após 1 hora → Clara volta automaticamente
+O hook atual só invalida quando muda o médico/data específicos. Vou garantir que ele funcione de forma mais abrangente.
 
 ---
 
-## Seção Técnica
+## Como vai funcionar
 
-### Arquivo: `supabase/functions/zapi-webhook/index.ts`
+```text
+┌─────────────────────────────────────────────────┐
+│ Secretária A marca um exame às 14:00            │
+└─────────────────────┬───────────────────────────┘
+                      │
+                      ▼
+┌─────────────────────────────────────────────────┐
+│ Banco de dados recebe INSERT no appointments    │
+│ Supabase Realtime envia notificação             │
+└─────────────────────┬───────────────────────────┘
+                      │
+                      ▼
+┌─────────────────────────────────────────────────┐
+│ Secretária B (com a mesma tela aberta)          │
+│ Recebe evento realtime → atualiza grade         │
+│ Vê o novo agendamento aparecer automaticamente  │
+└─────────────────────────────────────────────────┘
+```
 
-Mudanças:
-1. Adicionar log completo no início (antes de qualquer filtro)
-2. Detectar `fromMe` em múltiplos formatos (boolean e string)
-3. Adicionar logs mais claros para facilitar debug
+---
 
-### Arquivo: `supabase/functions/zapi-status/index.ts`
+## Mudanças por Arquivo
 
-Mudanças:
-1. Garantir que ambos webhooks estão configurados corretamente
-2. Chamar o endpoint `update-notify-sent-by-me` via API para garantir que a opção está ativada (redundância de segurança)
+### 1. Migração SQL
+
+**Adicionar `schedule_openings` ao realtime:**
+```sql
+ALTER PUBLICATION supabase_realtime ADD TABLE public.schedule_openings;
+```
+
+### 2. Novo arquivo: `src/hooks/useRealtimeScheduleOpenings.ts`
+
+Hook para sincronizar agendas extras em tempo real.
+
+### 3. Atualizar: `src/pages/admin/Agendamentos.tsx`
+
+Importar e usar o novo hook para sincronização de schedule_openings.
+
+### 4. Verificar: `src/hooks/useRealtimeAppointments.ts`
+
+Garantir que o canal está funcionando corretamente e adicionar log para debug.
+
+---
+
+## Resultado Final
+
+| Ação | Atualização em tempo real |
+|------|---------------------------|
+| Nova consulta/exame marcado | Sim |
+| Consulta editada | Sim |
+| Consulta cancelada | Sim |
+| Data extra adicionada | Sim |
+
+Todas as secretárias conectadas verão as mudanças **instantaneamente**, sem precisar atualizar a página.
 
