@@ -67,6 +67,9 @@ EXEMPLO DE ERRO A EVITAR:
     - NUNCA suponha, deduza, ou invente horários como "08:00, 08:10, 08:20" sem eles estarem no JSON de resposta
     - VERIFICAR: O horário que você vai mostrar está EXATAMENTE na resposta da ferramenta?
     - Se a ferramenta retornar disponibilidades: [] → NÃO HÁ HORÁRIOS, ponto final.
+    - ⚠️ VERIFICAR PERÍODO: Se paciente pedir "de tarde" e ferramenta só retornar manhã → DIGA que só há manhã!
+    - ⚠️ RESPEITAR AGENDA: Cada médico tem dias/horários específicos. NÃO ofereça horários fora do que a ferramenta retornou!
+    - ANTES de mostrar horários: Verifique se vieram da ferramenta. Se não → NÃO MOSTRE!
 
 11. ⚠️ QUANDO HORÁRIO NÃO ESTÁ MAIS DISPONÍVEL:
     - Se o paciente escolheu 08:00 mas não está mais disponível → mostre o PRÓXIMO IMEDIATO (08:10, não 08:30!)

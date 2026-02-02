@@ -123,19 +123,35 @@ Deno.serve(async (req) => {
     const text = body.text?.message || body.text || body.body || "";
     const senderName = body.senderName || body.pushName || body.notifyName || null;
 
-    // Handle fromMe messages (could be Clara or Secretary)
+    // ============================================================
+    // DETECÇÃO DE MENSAGEM MANUAL DA SECRETÁRIA
+    // ============================================================
     // Detectar fromMe em múltiplos formatos (boolean, string, ou self)
     const isFromMe = body.fromMe === true || body.fromMe === "true" || body.self === true;
+    
+    // NOVO: Detectar evento de mensagem enviada via webhook-send
+    // Z-API pode enviar eventos como "MessageSendCallback", "message-send", etc.
+    const isSendEvent = 
+      body.type === "MessageSendCallback" ||
+      body.type === "message-send" ||
+      body.event === "message-send" ||
+      body.event === "MessageSendCallback" ||
+      body.status === "SENT" ||
+      (body.fromMe === true && body.type !== "ReceivedCallback");
     
     console.log("📊 Análise fromMe:", {
       "body.fromMe": body.fromMe,
       "typeof body.fromMe": typeof body.fromMe,
       "body.self": body.self,
+      "body.type": body.type,
+      "body.event": body.event,
+      "body.status": body.status,
       "isFromMe (calculado)": isFromMe,
+      "isSendEvent": isSendEvent,
     });
     
-    if (isFromMe) {
-      console.log("📤 MENSAGEM ENVIADA (fromMe detectado) para telefone:", phone);
+    if (isFromMe || isSendEvent) {
+      console.log("📤 MENSAGEM ENVIADA (fromMe/sendEvent detectado) para telefone:", phone);
       console.log("   - messageId:", messageId);
       console.log("   - isOld:", body.isOld);
       console.log("   - fromApi:", body.fromApi);
@@ -162,9 +178,12 @@ Deno.serve(async (req) => {
         );
       }
 
-      // This is a manual message from the secretary - create/update auto-pause
+      // ============================================================
+      // MENSAGEM MANUAL DA SECRETÁRIA DETECTADA!
+      // ============================================================
       console.log("🔴🔴🔴 MENSAGEM MANUAL DA SECRETÁRIA DETECTADA! 🔴🔴🔴");
       console.log("   - Telefone:", phone);
+      console.log("   - Texto:", text?.substring(0, 50) || "(vazio)");
       console.log("   - Criando pausa automática de 1 hora...");
       await createOrUpdateAutoPause(supabase, phone, null);
       console.log("✅ Pausa automática criada/atualizada com sucesso para:", phone);
