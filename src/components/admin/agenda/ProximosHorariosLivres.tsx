@@ -143,9 +143,9 @@ export function ProximosHorariosLivres({
           // Find free slots
           const freeSlots: string[] = [];
           
-          // Generate slots from minMinutes up to (but not including) dayEnd
-          // This ensures the last slot that STARTS before dayEnd is included
-          for (let min = minMinutes; min < dayEnd && freeSlots.length < 8; min += 10) {
+          // hora_fim defines the LAST possible START time for an appointment
+          // So we include dayEnd (<=) to show the final slot
+          for (let min = minMinutes; min <= dayEnd && freeSlots.length < 8; min += 10) {
             // Check if this time is occupied
             const isOccupied = sortedApts.some(apt => {
               const aptStart = timeToMinutes(apt.hora_inicio);
@@ -153,18 +153,18 @@ export function ProximosHorariosLivres({
               return min >= aptStart && min < aptEnd;
             });
 
-            // Check if within work hours (from rules) - slot must start within work hours
+            // Check if within work hours (from rules) - hora_fim is inclusive
             const isWithinRules = rulesForDay.some(rule => {
               const ruleStart = timeToMinutes(rule.hora_inicio);
               const ruleEnd = timeToMinutes(rule.hora_fim);
-              return min >= ruleStart && min < ruleEnd;
+              return min >= ruleStart && min <= ruleEnd;
             });
 
-            // Check if within schedule openings (agendas extras)
+            // Check if within schedule openings (agendas extras) - hora_fim is inclusive
             const isWithinOpenings = openingsForDay.some(opening => {
               const openingStart = timeToMinutes(opening.hora_inicio);
               const openingEnd = timeToMinutes(opening.hora_fim);
-              return min >= openingStart && min < openingEnd;
+              return min >= openingStart && min <= openingEnd;
             });
 
             // Slot is available if within rules OR openings, and not occupied
