@@ -111,11 +111,15 @@ Deno.serve(async (req) => {
       const webhookUrl = `${supabaseUrl}/functions/v1/zapi-webhook?token=${clientToken || zapiToken}`;
       
       try {
-        console.log("Configuring webhooks for sent message detection...");
+        console.log("============================================");
+        console.log("🔧 CONFIGURANDO WEBHOOKS PARA DETECÇÃO DE SECRETÁRIA");
+        console.log("============================================");
         console.log("Webhook URL:", webhookUrl);
         
         // 1. Configure webhook for SENT messages (fromMe: true)
+        // This is CRITICAL for detecting when secretary sends manual messages
         const updateSendUrl = `https://api.z-api.io/instances/${instanceId}/token/${zapiToken}/update-webhook-send`;
+        console.log("📤 Configurando webhook SEND:", updateSendUrl);
         const sendRes = await fetch(updateSendUrl, {
           method: "PUT",
           headers: {
@@ -125,14 +129,16 @@ Deno.serve(async (req) => {
           body: JSON.stringify({ value: webhookUrl }),
         });
         
+        const sendResText = await sendRes.text();
         if (sendRes.ok) {
-          console.log("✅ Webhook SEND configurado");
+          console.log("✅ Webhook SEND configurado com sucesso:", sendResText);
         } else {
-          console.log("❌ Erro webhook send:", await sendRes.text());
+          console.log("❌ Erro ao configurar webhook send:", sendRes.status, sendResText);
         }
 
         // 2. Configure webhook for RECEIVED messages
         const updateReceivedUrl = `https://api.z-api.io/instances/${instanceId}/token/${zapiToken}/update-webhook-received`;
+        console.log("📥 Configurando webhook RECEIVED:", updateReceivedUrl);
         const receivedRes = await fetch(updateReceivedUrl, {
           method: "PUT",
           headers: {
@@ -142,15 +148,17 @@ Deno.serve(async (req) => {
           body: JSON.stringify({ value: webhookUrl }),
         });
         
+        const receivedResText = await receivedRes.text();
         if (receivedRes.ok) {
-          console.log("✅ Webhook RECEIVED configurado");
+          console.log("✅ Webhook RECEIVED configurado:", receivedResText);
         } else {
-          console.log("❌ Erro webhook received:", await receivedRes.text());
+          console.log("❌ Erro webhook received:", receivedRes.status, receivedResText);
         }
 
         // 3. CRITICAL: Enable "Notify sent by me" option via API
         // This ensures the toggle in Z-API dashboard is activated
         const notifySentByMeUrl = `https://api.z-api.io/instances/${instanceId}/token/${zapiToken}/update-notify-sent-by-me`;
+        console.log("🔔 Ativando notificação 'sent by me':", notifySentByMeUrl);
         const notifyRes = await fetch(notifySentByMeUrl, {
           method: "PUT",
           headers: {
@@ -160,12 +168,35 @@ Deno.serve(async (req) => {
           body: JSON.stringify({ value: true }),
         });
         
+        const notifyResText = await notifyRes.text();
         if (notifyRes.ok) {
-          console.log("✅ Notify sent by me ATIVADO via API");
+          console.log("✅ Notify sent by me ATIVADO:", notifyResText);
         } else {
-          console.log("⚠️ Não foi possível ativar notify-sent-by-me via API:", await notifyRes.text());
-          console.log("   (Isso é OK se já está ativado no painel da Z-API)");
+          console.log("⚠️ Erro ao ativar notify-sent-by-me:", notifyRes.status, notifyResText);
+          console.log("   ⚠️ IMPORTANTE: Verifique manualmente no painel Z-API se esta opção está ativada!");
         }
+
+        // 4. NEW: Also try to set the DeliveryCallback webhook for message status
+        const updateDeliveryUrl = `https://api.z-api.io/instances/${instanceId}/token/${zapiToken}/update-webhook-delivery`;
+        console.log("📬 Configurando webhook DELIVERY:", updateDeliveryUrl);
+        const deliveryRes = await fetch(updateDeliveryUrl, {
+          method: "PUT",
+          headers: {
+            ...zapiHeaders,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ value: webhookUrl }),
+        });
+        
+        if (deliveryRes.ok) {
+          console.log("✅ Webhook DELIVERY configurado");
+        } else {
+          console.log("ℹ️ Webhook delivery não configurado (opcional):", await deliveryRes.text());
+        }
+
+        console.log("============================================");
+        console.log("🏁 CONFIGURAÇÃO DE WEBHOOKS CONCLUÍDA");
+        console.log("============================================");
 
       } catch (e) {
         console.error("Error configuring webhooks:", e);
