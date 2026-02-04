@@ -358,6 +358,27 @@ export type Database = {
         }
         Relationships: []
       }
+      whatsapp_lid_mappings: {
+        Row: {
+          created_at: string
+          lid_id: string
+          phone: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          lid_id: string
+          phone: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          lid_id?: string
+          phone?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       whatsapp_messages: {
         Row: {
           content: string

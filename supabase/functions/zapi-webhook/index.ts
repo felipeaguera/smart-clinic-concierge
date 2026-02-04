@@ -5,6 +5,73 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-client-token",
 };
 
+// ============================================================
+// FUNÇÃO: Mapear/Resolver identificadores @lid para telefone real
+// ============================================================
+async function getOrMapLidToPhone(
+  supabase: any, 
+  lidId: string, 
+  knownPhone?: string
+): Promise<string | null> {
+  // Se não contém @lid, já é um telefone normal
+  if (!lidId || !lidId.includes("@lid")) {
+    return lidId || null;
+  }
+  
+  console.log("🔄 Tentando resolver @lid:", lidId);
+  
+  // Tentar buscar mapeamento existente
+  const { data: mapping, error } = await supabase
+    .from("whatsapp_lid_mappings")
+    .select("phone")
+    .eq("lid_id", lidId)
+    .maybeSingle();
+    
+  if (mapping?.phone) {
+    console.log("✅ Mapeamento encontrado:", lidId, "->", mapping.phone);
+    return mapping.phone;
+  }
+  
+  // Se temos um telefone conhecido válido, criar mapeamento
+  if (knownPhone && !knownPhone.includes("@")) {
+    console.log("📝 Criando novo mapeamento:", lidId, "->", knownPhone);
+    await supabase.from("whatsapp_lid_mappings").upsert({
+      lid_id: lidId,
+      phone: knownPhone,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'lid_id' });
+    return knownPhone;
+  }
+  
+  console.log("⚠️ Não foi possível resolver @lid:", lidId);
+  return null;
+}
+
+// ============================================================
+// FUNÇÃO: Extrair telefone de múltiplas fontes do payload
+// ============================================================
+function extractPhoneFromPayload(body: any): string | null {
+  // Lista de campos onde o telefone pode estar
+  const sources = [
+    body.phone,
+    body.from?.replace("@c.us", ""),
+    body.to?.replace("@c.us", ""),
+    body.chatId?.replace("@c.us", "").replace("@lid", ""),
+    body.chat?.phone,
+    body.participant?.replace("@c.us", ""),
+  ];
+  
+  // Tentar cada fonte, preferindo as que não contêm @
+  for (const source of sources) {
+    if (source && typeof source === "string" && !source.includes("@")) {
+      return source;
+    }
+  }
+  
+  // Se não encontrou nenhum limpo, retornar o primeiro disponível
+  return body.phone || body.from?.replace("@c.us", "") || null;
+}
+
 // Helper to check if a message is from Clara (sent via API) by checking provider_message_id
 async function isMessageFromClara(supabase: any, messageId: string): Promise<boolean> {
   if (!messageId) return false;
@@ -53,7 +120,7 @@ async function createOrUpdateAutoPause(
       .from("human_handoff_queue")
       .update({ auto_pause_until: oneHourFromNow })
       .eq("id", existingHandoff.id);
-    console.log("Updated auto-pause for phone:", phone);
+    console.log("✅ Auto-pause atualizado para:", phone, "até:", oneHourFromNow);
     return true;
   } else {
     // Create new entry with auto-pause (status = 'resolved' since it's automatic)
@@ -63,7 +130,7 @@ async function createOrUpdateAutoPause(
       status: "resolved", // Not a manual handoff, just auto-pause
       auto_pause_until: oneHourFromNow,
     });
-    console.log("Created auto-pause for phone:", phone);
+    console.log("✅ Auto-pause criado para:", phone, "até:", oneHourFromNow);
     return true;
   }
 }
@@ -99,7 +166,32 @@ async function resolveRealPhoneFromReference(
   return referencedMsg?.phone ?? null;
 }
 
-// Helper to check if Clara should be paused (handoff open OR auto-pause active)
+// ============================================================
+// FUNÇÃO: Buscar última mensagem inbound recente como fallback
+// ============================================================
+async function getRecentInboundPhone(supabase: any): Promise<string | null> {
+  const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+  
+  const { data: lastInbound } = await supabase
+    .from("whatsapp_messages")
+    .select("phone, created_at")
+    .eq("direction", "inbound")
+    .gt("created_at", thirtyMinutesAgo)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  
+  if (lastInbound?.phone && !lastInbound.phone.includes("@")) {
+    console.log("📞 Fallback: usando último telefone inbound recente:", lastInbound.phone);
+    return lastInbound.phone;
+  }
+  
+  return null;
+}
+
+// ============================================================
+// CORREÇÃO: Verificar pausa ignorando status (QUALQUER status com auto_pause_until)
+// ============================================================
 async function shouldPauseClara(supabase: any, phone: string): Promise<boolean> {
   // Only check real phone numbers (not internal @lid identifiers)
   if (!phone || phone.includes("@lid")) {
@@ -121,20 +213,19 @@ async function shouldPauseClara(supabase: any, phone: string): Promise<boolean> 
     return true;
   }
   
-  // Check for active auto-pause (secretary intervened recently)
-  // IMPORTANT: Only pause if auto_pause_until is in the future AND this is not a resolved handoff
+  // CORREÇÃO: Check for active auto-pause (ANY status, not just resolved)
+  // Qualquer registro com auto_pause_until no futuro deve pausar a Clara
   const { data: autoPause } = await supabase
     .from("human_handoff_queue")
-    .select("id, auto_pause_until")
+    .select("id, auto_pause_until, status")
     .eq("phone", phone)
-    .eq("status", "resolved")
     .gt("auto_pause_until", now)
     .order("auto_pause_until", { ascending: false })
     .limit(1)
     .maybeSingle();
   
   if (autoPause) {
-    console.log("⏸️ Auto-pause ativo para:", phone, "até:", autoPause.auto_pause_until);
+    console.log("⏸️ Auto-pause ativo para:", phone, "status:", autoPause.status, "até:", autoPause.auto_pause_until);
     return true;
   }
   
@@ -180,6 +271,7 @@ Deno.serve(async (req) => {
       fromMeType: typeof body.fromMe,
       self: body.self,
       phone: body.phone || body.from,
+      chatId: body.chatId,
       type: body.type,
       event: body.event,
       isStatusMessage: body.isStatusMessage,
@@ -195,8 +287,8 @@ Deno.serve(async (req) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Extract common data
-    const phone = body.phone || body.from?.replace("@c.us", "");
+    // Extract common data usando múltiplas fontes
+    const rawPhone = extractPhoneFromPayload(body);
     const messageId = body.messageId || body.id;
     const text = body.text?.message || body.text || body.body || "";
     const senderName = body.senderName || body.pushName || body.notifyName || null;
@@ -226,11 +318,14 @@ Deno.serve(async (req) => {
       "body.status": body.status,
       "isFromMe (calculado)": isFromMe,
       "isSendEvent": isSendEvent,
+      "rawPhone": rawPhone,
+      "chatId": body.chatId,
     });
     
     if (isFromMe || isSendEvent) {
-      console.log("📤 MENSAGEM ENVIADA (fromMe/sendEvent detectado) para telefone:", phone);
+      console.log("📤 MENSAGEM ENVIADA (fromMe/sendEvent detectado)");
       console.log("   - messageId:", messageId);
+      console.log("   - rawPhone:", rawPhone);
       console.log("   - isOld:", body.isOld);
       console.log("   - fromApi:", body.fromApi);
       console.log("   - waitingMessage:", body.waitingMessage);
@@ -258,34 +353,110 @@ Deno.serve(async (req) => {
 
       // ============================================================
       // MENSAGEM MANUAL DA SECRETÁRIA DETECTADA!
+      // Resolver telefone real usando múltiplas estratégias
       // ============================================================
       console.log("🔴🔴🔴 MENSAGEM MANUAL DA SECRETÁRIA DETECTADA! 🔴🔴🔴");
-      // Resolve real patient phone when Z-API provides a @lid identifier
-      const resolvedPhone = (await resolveRealPhoneFromReference(supabase, body)) || phone;
-      console.log("   - Telefone (raw):", phone);
-      console.log("   - Telefone (resolvido):", resolvedPhone);
+      
+      let resolvedPhone: string | null = rawPhone;
+      
+      // Estratégia 1: Se rawPhone é válido (sem @), usar diretamente
+      if (resolvedPhone && !resolvedPhone.includes("@")) {
+        console.log("📞 Telefone extraído diretamente do payload:", resolvedPhone);
+      }
+      
+      // Estratégia 2: Se tem @lid, tentar resolver via mapeamento
+      if (!resolvedPhone || resolvedPhone.includes("@lid")) {
+        const lidId = body.chatId || rawPhone;
+        if (lidId?.includes("@lid")) {
+          const mappedPhone = await getOrMapLidToPhone(supabase, lidId);
+          if (mappedPhone) {
+            resolvedPhone = mappedPhone;
+            console.log("📞 Telefone resolvido via mapeamento lid:", resolvedPhone);
+          }
+        }
+      }
+      
+      // Estratégia 3: Tentar via referenceMessageId
+      if (!resolvedPhone || resolvedPhone.includes("@")) {
+        const refPhone = await resolveRealPhoneFromReference(supabase, body);
+        if (refPhone) {
+          resolvedPhone = refPhone;
+          console.log("📞 Telefone resolvido via referenceMessageId:", resolvedPhone);
+          
+          // Atualizar mapeamento se tínhamos um @lid
+          const lidId = body.chatId || rawPhone;
+          if (lidId?.includes("@lid")) {
+            await getOrMapLidToPhone(supabase, lidId, resolvedPhone);
+          }
+        }
+      }
+      
+      // Estratégia 4: Último recurso - buscar última mensagem inbound recente
+      if (!resolvedPhone || resolvedPhone.includes("@")) {
+        const recentPhone = await getRecentInboundPhone(supabase);
+        if (recentPhone) {
+          resolvedPhone = recentPhone;
+          console.log("📞 Telefone resolvido via fallback (último inbound):", resolvedPhone);
+          
+          // Atualizar mapeamento se tínhamos um @lid
+          const lidId = body.chatId || rawPhone;
+          if (lidId?.includes("@lid")) {
+            await getOrMapLidToPhone(supabase, lidId, resolvedPhone);
+          }
+        }
+      }
+      
+      console.log("   - Telefone final resolvido:", resolvedPhone);
       console.log("   - Texto:", text?.substring(0, 50) || "(vazio)");
+      
+      // ============================================================
+      // CORREÇÃO: Salvar mensagem manual da secretária no banco
+      // ============================================================
+      if (resolvedPhone && !resolvedPhone.includes("@") && messageId) {
+        console.log("💾 Salvando mensagem manual da secretária no banco...");
+        try {
+          await supabase.from("whatsapp_messages").insert({
+            phone: resolvedPhone,
+            provider_message_id: messageId,
+            direction: "outbound",
+            content: text || "(mensagem manual)",
+          });
+          console.log("✅ Mensagem manual salva com sucesso");
+        } catch (saveError) {
+          // Ignorar erro de duplicata
+          console.log("⚠️ Erro ao salvar mensagem manual (pode ser duplicata):", saveError);
+        }
+      }
+      
+      // Criar pausa automática
       console.log("   - Criando pausa automática de 1 hora...");
-
-      const pauseCreated = await createOrUpdateAutoPause(supabase, resolvedPhone, null);
+      const pauseCreated = await createOrUpdateAutoPause(supabase, resolvedPhone || "", null);
+      
       if (pauseCreated) {
         console.log("✅ Pausa automática criada/atualizada com sucesso para:", resolvedPhone);
       } else {
         console.log(
           "⚠️ Não foi possível criar pausa automática (sem phone real). Raw:",
-          phone,
+          rawPhone,
           "Resolved:",
           resolvedPhone
         );
       }
       
       return new Response(
-        JSON.stringify({ success: true, autoPauseCreated: pauseCreated, phone: resolvedPhone }),
+        JSON.stringify({ 
+          success: true, 
+          autoPauseCreated: pauseCreated, 
+          phone: resolvedPhone,
+          rawPhone: rawPhone,
+          messageSaved: resolvedPhone && !resolvedPhone.includes("@"),
+        }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
     // From here on, handle inbound messages from patients (fromMe = false)
+    const phone = rawPhone;
     
     // Ignore old messages or history sync
     if (body.isOld || body.isFromHistory || body.waitingMessage) {
@@ -318,6 +489,14 @@ Deno.serve(async (req) => {
         JSON.stringify({ success: true, ignored: true, reason: "missing_data" }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
+    }
+
+    // ============================================================
+    // CORREÇÃO: Criar mapeamento lid → phone em mensagens inbound
+    // ============================================================
+    if (body.chatId?.includes("@lid") && phone && !phone.includes("@")) {
+      console.log("📝 Mapeando @lid para telefone real em mensagem inbound");
+      await getOrMapLidToPhone(supabase, body.chatId, phone);
     }
 
     // Check for duplicate message (idempotency)
