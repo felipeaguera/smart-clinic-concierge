@@ -62,13 +62,23 @@ Segunda a Sexta: 8h às 18h
 7. Sempre cordial e acolhedor.
 8. Reagendamento/troca de horário → SEMPRE encaminhar para humano.
 
-9. ⚠️ REGRA CRÍTICA DE RESERVA - NOME DO PACIENTE:
-   - ANTES de chamar reservar_horario → PERGUNTAR NOME COMPLETO e AGUARDAR resposta do paciente
+9. ⚠️ REGRA CRÍTICA DE RESERVA - DADOS DO PACIENTE:
+   ANTES de chamar reservar_horario:
+   1. PERGUNTAR NOME COMPLETO e AGUARDAR resposta do paciente
+   2. PERGUNTAR TELEFONE (com DDD) e AGUARDAR resposta do paciente
+   3. SOMENTE após ter AMBOS os dados → chamar reservar_horario
+   
    - NUNCA inventar ou usar placeholder como "[NOME_COMPLETO_DO_PACIENTE]" 
-   - O nome DEVE ser uma resposta real do paciente na conversa
-   - Se o paciente ainda não informou o nome → PERGUNTE e ESPERE a resposta
-   - PROIBIÇÃO ABSOLUTA: Chamar reservar_horario sem ter recebido o nome REAL do paciente
-   - Se você não sabe o nome → NÃO CHAME reservar_horario!
+   - O nome e telefone DEVEM ser respostas reais do paciente na conversa
+   - Se o paciente ainda não informou nome OU telefone → PERGUNTE e ESPERE a resposta
+   - PROIBIÇÃO ABSOLUTA: Chamar reservar_horario sem ter recebido nome E telefone REAIS
+   - Se você não sabe o nome ou telefone → NÃO CHAME reservar_horario!
+   - Exemplo de fluxo correto:
+     Clara: "Qual é o seu nome completo?"
+     Paciente: "Maria Silva"
+     Clara: "Obrigada, Maria! E qual é o seu telefone com DDD?"
+     Paciente: "15 99999-1234"
+     Clara: [agora pode chamar reservar_horario com nome + telefone]
 
 10. ⚠️ CRÍTICO - NUNCA INVENTAR HORÁRIOS:
     - SOMENTE exiba horários que vieram LITERALMENTE da resposta das ferramentas
@@ -1022,7 +1032,7 @@ ${examTypes
         function: {
           name: "reservar_horario",
           description:
-            "Reserva um horário. REGRAS CRÍTICAS OBRIGATÓRIAS: 1) SOMENTE usar após o paciente CONFIRMAR o horário. 2) O paciente DEVE ter informado seu NOME COMPLETO na conversa ANTES de chamar esta função. 3) Se o nome não foi informado, PERGUNTE primeiro e espere a resposta. 4) NUNCA use placeholder como '[NOME_COMPLETO_DO_PACIENTE]' ou nomes inventados - isso causará ERRO. 5) O nome deve ser EXATAMENTE o que o paciente digitou na conversa.",
+            "Reserva um horário. REGRAS CRÍTICAS OBRIGATÓRIAS: 1) SOMENTE usar após o paciente CONFIRMAR o horário. 2) O paciente DEVE ter informado seu NOME COMPLETO E TELEFONE na conversa ANTES de chamar esta função. 3) Se o nome OU telefone não foram informados, PERGUNTE primeiro e espere a resposta. 4) NUNCA use placeholder como '[NOME_COMPLETO_DO_PACIENTE]' ou dados inventados - isso causará ERRO. 5) O nome e telefone devem ser EXATAMENTE o que o paciente digitou na conversa.",
           parameters: {
             type: "object",
             properties: {
@@ -1034,10 +1044,15 @@ ${examTypes
               paciente_nome: {
                 type: "string",
                 description:
-                  "Nome completo do paciente (DEVE ser o nome REAL informado pelo paciente na conversa. NUNCA use placeholder como '[NOME_COMPLETO_DO_PACIENTE]'. Se o paciente não informou o nome ainda, NÃO chame esta função!)",
+                  "Nome completo do paciente (DEVE ser o nome REAL informado pelo paciente na conversa. NUNCA use placeholder. Se o paciente não informou o nome ainda, NÃO chame esta função!)",
+              },
+              paciente_telefone: {
+                type: "string",
+                description:
+                  "Telefone do paciente com DDD (ex: 15999991234). DEVE ter sido informado pelo paciente na conversa. Se o paciente não informou o telefone ainda, NÃO chame esta função!",
               },
             },
-            required: ["doctor_id", "exam_type_id", "data", "hora_inicio", "hora_fim", "paciente_nome"],
+            required: ["doctor_id", "exam_type_id", "data", "hora_inicio", "hora_fim", "paciente_nome", "paciente_telefone"],
             additionalProperties: false,
           },
         },
@@ -1047,7 +1062,7 @@ ${examTypes
         function: {
           name: "reservar_multiplos_horarios",
           description:
-            "Reserva MÚLTIPLOS exames consecutivos em uma única operação. USAR QUANDO: paciente confirmar 2+ exames em sequência (ex: abdome + transvaginal). REGRAS: 1) Horários devem ser consecutivos (fim do primeiro = início do próximo). 2) Paciente DEVE ter confirmado todos os exames e horário. 3) Nome DEVE ter sido informado na conversa.",
+            "Reserva MÚLTIPLOS exames consecutivos em uma única operação. USAR QUANDO: paciente confirmar 2+ exames em sequência (ex: abdome + transvaginal). REGRAS: 1) Horários devem ser consecutivos (fim do primeiro = início do próximo). 2) Paciente DEVE ter confirmado todos os exames e horário. 3) Nome E telefone DEVEM ter sido informados na conversa.",
           parameters: {
             type: "object",
             properties: {
@@ -1070,8 +1085,12 @@ ${examTypes
                 type: "string",
                 description: "Nome completo do paciente (DEVE ter sido informado pelo paciente na conversa)",
               },
+              paciente_telefone: {
+                type: "string",
+                description: "Telefone do paciente com DDD (ex: 15999991234). DEVE ter sido informado pelo paciente na conversa.",
+              },
             },
-            required: ["reservas", "paciente_nome"],
+            required: ["reservas", "paciente_nome", "paciente_telefone"],
             additionalProperties: false,
           },
         },
@@ -1411,6 +1430,7 @@ ${examTypes
                 hora_inicio: args.hora_inicio,
                 hora_fim: args.hora_fim,
                 paciente_nome: args.paciente_nome,
+                paciente_telefone: args.paciente_telefone,
               }),
             });
             result = await reservarResponse.json();
@@ -1427,6 +1447,7 @@ ${examTypes
             body: JSON.stringify({
               reservas: args.reservas,
               paciente_nome: args.paciente_nome,
+              paciente_telefone: args.paciente_telefone,
             }),
           });
           result = await reservarMultiplosResponse.json();
