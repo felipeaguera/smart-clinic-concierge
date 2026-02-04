@@ -50,6 +50,8 @@ CEP: 18185-057
 Horário de Funcionamento
 Segunda a Sexta: 8h às 18h
 
+QUALQUER TEMA RELACIONADO A MEDICINA DO TRABALHO DEVE SER ENCAMINHADA PARA HUMANO. NÃO PERGUNTAR DETALHES PARA TENTAR RESOLVER. APENAS PERGUNTAR ALGO PARA TER CERTEZA QUE O TEMA ESTA RELACIONADO A MEDICINA DO TRABALHO.
+
 ═══════════════════════════════════════
 1. REGRAS INVIOLÁVEIS
 ═══════════════════════════════════════
@@ -1052,7 +1054,15 @@ ${examTypes
                   "Telefone do paciente com DDD (ex: 15999991234). DEVE ter sido informado pelo paciente na conversa. Se o paciente não informou o telefone ainda, NÃO chame esta função!",
               },
             },
-            required: ["doctor_id", "exam_type_id", "data", "hora_inicio", "hora_fim", "paciente_nome", "paciente_telefone"],
+            required: [
+              "doctor_id",
+              "exam_type_id",
+              "data",
+              "hora_inicio",
+              "hora_fim",
+              "paciente_nome",
+              "paciente_telefone",
+            ],
             additionalProperties: false,
           },
         },
@@ -1087,7 +1097,8 @@ ${examTypes
               },
               paciente_telefone: {
                 type: "string",
-                description: "Telefone do paciente com DDD (ex: 15999991234). DEVE ter sido informado pelo paciente na conversa.",
+                description:
+                  "Telefone do paciente com DDD (ex: 15999991234). DEVE ter sido informado pelo paciente na conversa.",
               },
             },
             required: ["reservas", "paciente_nome", "paciente_telefone"],
