@@ -35,6 +35,7 @@ interface AgendaTimeGridProps {
   scheduleOpenings: ScheduleOpening[];
   appointments: Appointment[];
   selectedDate: Date;
+  compactMode?: boolean;
   tipoAtendimento: 'consulta' | 'ultrassom';
   onSlotClick: (time: string, availableMinutes: number, endTime: string) => void;
   onAppointmentClick: (appointment: Appointment) => void;
@@ -69,6 +70,7 @@ export function AgendaTimeGrid({
   scheduleOpenings,
   appointments,
   selectedDate,
+  compactMode = false,
   tipoAtendimento,
   onSlotClick,
   onAppointmentClick,
@@ -256,27 +258,47 @@ export function AgendaTimeGrid({
     return 'grid-cols-3';
   };
 
+  // In compact mode, we skip continuation rows entirely
+  const displayRows = compactMode 
+    ? rows.filter(row => row.appointments.length > 0 || row.isFree || row.continuingAppointments.length === 0)
+    : rows;
+
+  // For compact mode, filter out pure continuation rows (no new appointments, no free slot)
+  const filteredRows = compactMode
+    ? rows.filter(row => 
+        row.appointments.length > 0 || 
+        row.isFree || 
+        (row.continuingAppointments.length === 0 && row.isWithinWorkHours)
+      )
+    : rows;
+
   return (
-    <div className="border rounded-lg overflow-hidden">
-      {rows.map((row) => {
-        const allAppointments = [...row.appointments, ...row.continuingAppointments];
-        const hasMultiple = allAppointments.length > 1 || row.appointments.length > 1;
+    <div className="border rounded-lg overflow-hidden print-agenda">
+      {filteredRows.map((row) => {
+        const hasMultiple = row.appointments.length > 1;
         
+        // Skip rendering continuation rows in compact mode
+        if (compactMode && row.appointments.length === 0 && row.continuingAppointments.length > 0) {
+          return null;
+        }
+
         return (
           <div
             key={row.time}
             className={cn(
-              'flex border-b last:border-b-0 min-h-[44px]',
+              'flex border-b last:border-b-0',
+              compactMode ? 'min-h-[28px]' : 'min-h-[44px]',
               !row.isWithinWorkHours && 'bg-muted/30',
               isFullHour(row.minutes) && 'border-t-2 border-t-muted'
             )}
           >
             {/* Time column */}
             <div className={cn(
-              'w-16 shrink-0 px-2 py-1 border-r bg-muted/50 flex items-center justify-end',
+              'shrink-0 px-2 py-0.5 border-r bg-muted/50 flex items-center justify-end',
+              compactMode ? 'w-12' : 'w-16',
               isFullHour(row.minutes) ? 'font-semibold text-foreground' : 'text-muted-foreground'
             )}>
-              <span className="text-xs">
+              <span className={cn(compactMode ? 'text-[10px]' : 'text-xs')}>
                 {row.time}
               </span>
             </div>
@@ -295,11 +317,12 @@ export function AgendaTimeGrid({
                       appointment={apt}
                       onClick={() => onAppointmentClick(apt)}
                       compact={row.appointments.length > 1}
+                      compactMode={compactMode}
                     />
                   ))}
                 </div>
-              ) : row.continuingAppointments.length > 0 ? (
-                // Slots with continuing appointments (non-encaixe only)
+              ) : row.continuingAppointments.length > 0 && !compactMode ? (
+                // Slots with continuing appointments (non-encaixe only) - NOT shown in compact mode
                 <div className={cn(
                   'grid gap-0.5',
                   getGridCols(row.continuingAppointments.length)
@@ -319,7 +342,10 @@ export function AgendaTimeGrid({
               ) : row.isFree ? (
                 <button
                   onClick={() => onSlotClick(row.time, row.availableMinutes || 10, row.freeUntil || row.time)}
-                  className="w-full h-full min-h-[40px] rounded border border-dashed border-emerald-300 bg-emerald-50/30 hover:bg-emerald-100 hover:border-emerald-400 transition-colors flex items-center justify-center gap-1 text-emerald-600"
+                  className={cn(
+                    'w-full h-full rounded border border-dashed border-emerald-300 bg-emerald-50/30 hover:bg-emerald-100 hover:border-emerald-400 transition-colors flex items-center justify-center gap-1 text-emerald-600 no-print',
+                    compactMode ? 'min-h-[24px]' : 'min-h-[40px]'
+                  )}
                 >
                   <Plus className="h-3 w-3" />
                   <span className="text-xs font-medium">Livre</span>
