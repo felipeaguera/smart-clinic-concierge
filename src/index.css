@@ -128,11 +128,18 @@
     display: none !important;
   }
   
-  /* Full width for printable content */
+  /* Reset grid to single column */
   .print-agenda {
+    display: block !important;
     width: 100% !important;
     margin: 0 !important;
     padding: 0 !important;
+  }
+  
+  /* Center column takes full width */
+  .print-agenda > div:not(.no-print):not(.calendar-sidebar) {
+    width: 100% !important;
+    max-width: 100% !important;
   }
   
   /* Remove shadows and backgrounds */
@@ -140,18 +147,30 @@
     box-shadow: none !important;
   }
   
-  /* Compact fonts */
-  .print-compact {
-    font-size: 10px !important;
-  }
-  
-  /* Ensure cards print well */
+  /* Card styling for print */
   .print-agenda .border {
-    border-color: hsl(var(--border)) !important;
+    border-color: hsl(220 13% 91%) !important;
   }
   
-  /* Page margins */
+  /* Reduce card padding */
+  [class*="CardContent"] {
+    padding: 0.5rem !important;
+  }
+  
+  /* Ensure text is black for better printing */
+  body {
+    color: black !important;
+    background: white !important;
+  }
+  
+  /* Page margins and avoid breaks inside cards */
   @page {
-    margin: 1cm;
+    margin: 0.5cm;
+    size: A4 portrait;
+  }
+  
+  /* Avoid page breaks inside appointment cards */
+  .print-agenda button {
+    page-break-inside: avoid;
   }
 }
