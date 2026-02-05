@@ -446,7 +446,7 @@ export default function Agendamentos() {
         </div>
 
         {/* Right Column - Next Available Slots */}
-        <div className="space-y-4">
+        <div className="space-y-4 no-print">
           {selectedDoctorId && (
             <ProximosHorariosLivres
               doctorId={selectedDoctorId}
