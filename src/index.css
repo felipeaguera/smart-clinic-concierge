@@ -115,3 +115,43 @@
     @apply bg-card/80 backdrop-blur-sm border border-border/50 shadow-sm;
   }
 }
+
+/* Print styles for agenda */
+@media print {
+  /* Hide non-essential elements */
+  .no-print,
+  [data-sidebar],
+  .calendar-sidebar,
+  nav,
+  header,
+  .sidebar-container {
+    display: none !important;
+  }
+  
+  /* Full width for printable content */
+  .print-agenda {
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  
+  /* Remove shadows and backgrounds */
+  .print-agenda * {
+    box-shadow: none !important;
+  }
+  
+  /* Compact fonts */
+  .print-compact {
+    font-size: 10px !important;
+  }
+  
+  /* Ensure cards print well */
+  .print-agenda .border {
+    border-color: hsl(var(--border)) !important;
+  }
+  
+  /* Page margins */
+  @page {
+    margin: 1cm;
+  }
+}

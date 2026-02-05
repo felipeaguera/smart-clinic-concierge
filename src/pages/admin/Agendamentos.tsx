@@ -23,6 +23,7 @@ import { EncaixeModal } from '@/components/admin/agenda/EncaixeModal';
 import { format, addDays, subDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Stethoscope, Activity } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 interface Doctor {
   id: string;
@@ -82,6 +83,7 @@ export default function Agendamentos() {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
   const [encaixeModalOpen, setEncaixeModalOpen] = useState(false);
+  const [compactMode, setCompactMode] = useState(false);
 
   // Fetch doctors
   const { data: doctors } = useQuery({
@@ -324,9 +326,9 @@ export default function Agendamentos() {
 
   return (
     <AdminLayout title="Agenda Visual">
-      <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr_280px] gap-6">
+      <div className={cn("grid grid-cols-1 lg:grid-cols-[280px_1fr_280px] gap-6", compactMode && "print-agenda")}>
         {/* Left Column - Calendar and Filters */}
-        <div className="space-y-4">
+        <div className="space-y-4 calendar-sidebar no-print">
           {/* Mini Calendar */}
           <Card>
             <CardContent className="p-3">
@@ -398,6 +400,8 @@ export default function Agendamentos() {
                     doctorName={selectedDoctor?.nome}
                     tipoAtendimento={tipoAtendimento}
                     appointmentCount={appointmentCount}
+                    compactMode={compactMode}
+                    onCompactModeChange={setCompactMode}
                   />
                 </CardContent>
               </Card>
@@ -419,6 +423,7 @@ export default function Agendamentos() {
                   scheduleOpenings={scheduleOpenings || []}
                   appointments={appointments || []}
                   selectedDate={selectedDate}
+                  compactMode={compactMode}
                   tipoAtendimento={tipoAtendimento}
                   onSlotClick={handleSlotClick}
                   onAppointmentClick={handleAppointmentClick}

@@ -16,6 +16,7 @@ interface AgendaAppointmentCardProps {
   appointment: Appointment;
   onClick: () => void;
   compact?: boolean;
+  compactMode?: boolean; // New: for agenda-wide compact mode
 }
 
 const STATUS_CONFIG: Record<string, { bg: string; border: string; text: string; label: string }> = {
@@ -63,7 +64,7 @@ function timeToMinutes(time: string): number {
   return hours * 60 + minutes;
 }
 
-export function AgendaAppointmentCard({ appointment, onClick, compact = false }: AgendaAppointmentCardProps) {
+export function AgendaAppointmentCard({ appointment, onClick, compact = false, compactMode = false }: AgendaAppointmentCardProps) {
   const isEncaixe = appointment.is_encaixe === true;
   
   // Use encaixe colors if it's an encaixe, otherwise use status colors
@@ -76,6 +77,40 @@ export function AgendaAppointmentCard({ appointment, onClick, compact = false }:
   
   // Calculate duration from hora_inicio and hora_fim
   const durationMinutes = timeToMinutes(appointment.hora_fim) - timeToMinutes(appointment.hora_inicio);
+
+  // Ultra compact for print/compactMode - single line
+  if (compactMode) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className={cn(
+          'w-full rounded border-l-3 px-1.5 py-0.5 text-left transition-all hover:shadow cursor-pointer flex items-center gap-2',
+          isEncaixe ? ENCAIXE_CONFIG.bg : config.bg,
+          isEncaixe ? ENCAIXE_CONFIG.border : config.border,
+          isEncaixe ? ENCAIXE_CONFIG.text : config.text
+        )}
+      >
+        {isEncaixe && (
+          <UserPlus className="h-2.5 w-2.5 text-amber-600 shrink-0" />
+        )}
+        <span className="font-semibold text-[11px] truncate flex-1">
+          {patientName}
+        </span>
+        <span className="text-[10px] opacity-70 truncate max-w-[80px]">
+          {examName}
+        </span>
+        <span className="text-[10px] opacity-60 shrink-0">
+          {durationMinutes}min
+        </span>
+        {isEncaixe && (
+          <span className="text-[8px] font-medium bg-amber-200 text-amber-800 px-0.5 rounded shrink-0">
+            E
+          </span>
+        )}
+      </button>
+    );
+  }
 
   // Compact version for side-by-side display
   if (compact) {
