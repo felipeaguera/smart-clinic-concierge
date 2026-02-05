@@ -7,8 +7,7 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
 };
 
-// Super admin email is now stored in environment variable for security
-const SUPER_ADMIN_EMAIL = Deno.env.get('SUPER_ADMIN_EMAIL') || '';
+const SUPER_ADMIN_EMAIL = 'felipe_aguera@hotmail.com';
 
 serve(async (req) => {
   // Handle CORS preflight for all methods including DELETE
@@ -45,8 +44,8 @@ serve(async (req) => {
       );
     }
 
-    // Verificar se é o Super Admin (email configurado via secret)
-    if (!SUPER_ADMIN_EMAIL || user.email !== SUPER_ADMIN_EMAIL) {
+    // Verificar se é o Super Admin
+    if (user.email !== SUPER_ADMIN_EMAIL) {
       return new Response(
         JSON.stringify({ error: 'Acesso negado. Apenas o administrador principal pode gerenciar usuários.' }),
         { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
