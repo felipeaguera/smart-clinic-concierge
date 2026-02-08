@@ -1,152 +1,96 @@
 
 
-# Plano: Agenda Compacta e Otimizada para Impressão
+# Fix: Clara responding despite active auto-pause
 
-## Problema Atual
+## Root Cause
 
-| Aspecto | Valor Atual | Impacto |
-|---------|-------------|---------|
-| Altura mínima por slot | 44px | Agenda muito longa verticalmente |
-| Slots de continuação | Mostram linha para cada 10min | Ocupa espaço desnecessário |
-| Padding dos cards | py-1.5 px-2.5 | Espaço generoso demais |
-| Estilos de impressão | Nenhum | Imprime elementos desnecessários |
+The current code has a **single pause checkpoint** before calling the AI. If a secretary sends a manual reply while the AI is processing, the pause is created AFTER the check has already passed. The AI response is then sent to the patient despite the active pause.
 
-## Solução Proposta
+```text
+Timeline (race condition):
 
-### 1. Colapsar Slots de Continuação
-
-Em vez de mostrar uma linha visual para cada 10 minutos de continuação, mostrar apenas:
-- O card do agendamento no slot inicial (com altura proporcional à duração)
-- OU usar um sistema de "spanning" onde o card ocupa visualmente múltiplas linhas
-
-**Opção recomendada**: Manter slots de 10 minutos mas **não renderizar linha para continuações** - apenas o card inicial "cresce" visualmente.
-
-### 2. Reduzir Alturas e Espaçamentos
-
-| Componente | Atual | Proposta |
-|------------|-------|----------|
-| Altura mínima do slot | 44px | 32px |
-| Padding do card (full) | py-1.5 px-2.5 | py-1 px-2 |
-| Padding do card (compact) | py-1 px-1.5 | py-0.5 px-1 |
-| Min-height do card | 40px | 28px |
-| Coluna de horário | w-16 | w-14 |
-| Fonte do horário | text-xs | text-[11px] |
-
-### 3. Adicionar Modo de Visualização "Compacto"
-
-Criar um toggle no header da agenda:
-- **Normal**: Layout atual (para uso no dia-a-dia)
-- **Compacto**: Layout reduzido (para impressão ou visualização rápida)
-
-### 4. Estilos para Impressão (@media print)
-
-Adicionar CSS específico para impressão:
-- Ocultar sidebar, calendário lateral, botões de ação
-- Focar apenas na grade de horários
-- Usar fonte menor
-- Remover cores de fundo desnecessárias
-- Adicionar botão "Imprimir" no header
-
-### 5. Simplificar Cards na Versão Compacta
-
-Versão compacta do card:
-- Mostrar apenas: **horário + nome + procedimento** (em uma linha)
-- Remover ícones decorativos
-- Usar cores de borda para indicar status
-
-## Alterações Técnicas
-
-### Arquivo: `AgendaTimeGrid.tsx`
-
-1. Adicionar prop `compactMode?: boolean`
-2. Ajustar `min-h-[44px]` para `min-h-[32px]` quando compacto
-3. Não renderizar linhas de continuação em modo compacto (apenas mostrar o card inicial maior)
-
-### Arquivo: `AgendaAppointmentCard.tsx`
-
-1. Adicionar prop `printMode?: boolean`
-2. Criar versão ultra-compacta para impressão:
-```tsx
-// Modo compacto para impressão - uma única linha
-<div className="flex items-center gap-2 py-0.5 px-1 text-xs">
-  <span className="font-medium">{hora_inicio}</span>
-  <span className="truncate">{patientName}</span>
-  <span className="text-muted-foreground truncate">{examName}</span>
-</div>
+Patient msg webhook       Secretary msg webhook
+    |                           |
+    v                           |
+ Check pause → NO               |
+    |                           |
+    v                           v
+ Call AI (takes 3-5s)     Create auto-pause
+    |                           |
+    v                           v
+ Send AI response ← BUG!     Return OK
 ```
 
-### Arquivo: `AgendaHeader.tsx`
+## Solution
 
-1. Adicionar toggle "Modo Compacto"
-2. Adicionar botão "Imprimir"
+Add a **second pause check** right before sending the AI response via Z-API. This guarantees that even if a pause is created during AI processing, the response will be blocked.
 
-### Arquivo: `Agendamentos.tsx`
+Additionally, add a pause check before calling the AI as a redundant safety net.
 
-1. Adicionar estado `compactMode`
-2. Passar para componentes filhos
+## Changes to `supabase/functions/zapi-webhook/index.ts`
 
-### Arquivo: `index.css`
+### 1. Add second pause check AFTER AI response, BEFORE sending
 
-Adicionar estilos de impressão:
-```css
-@media print {
-  /* Ocultar elementos não essenciais */
-  .no-print,
-  [data-sidebar],
-  .calendar-sidebar { display: none !important; }
-  
-  /* Ajustar layout para página inteira */
-  .print-agenda { 
-    width: 100% !important;
-    margin: 0 !important;
-  }
-  
-  /* Fontes menores */
-  .print-compact { font-size: 10px !important; }
+After line 583 (where `aiResponse` and `humanHandoff` are extracted) and before sending the response (line 645), add:
+
+```typescript
+// SECOND PAUSE CHECK: Verify pause wasn't created while AI was processing
+const isPausedAfterAI = await shouldPauseClara(supabase, phone);
+if (isPausedAfterAI) {
+  console.log("PAUSE DETECTED AFTER AI PROCESSING for:", phone);
+  console.log("   - AI response will NOT be sent");
+  console.log("   - Secretary intervened during AI processing");
+  return new Response(
+    JSON.stringify({ 
+      success: true, 
+      claraPaused: true, 
+      reason: "pause_detected_after_ai" 
+    }),
+    { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+  );
 }
 ```
 
-## Fluxo de Implementação
+This check covers:
+- Race conditions where the secretary replies while the AI is generating a response
+- Cases where a handoff was opened during AI processing
 
-| Passo | Descrição |
-|-------|-----------|
-| 1 | Adicionar estilos de impressão no `index.css` |
-| 2 | Adicionar prop `compactMode` e toggle no header |
-| 3 | Ajustar `AgendaTimeGrid` para modo compacto |
-| 4 | Criar versão print-friendly do `AgendaAppointmentCard` |
-| 5 | Adicionar botão de imprimir que abre diálogo do navegador |
-| 6 | Testar impressão e ajustar espaçamentos |
+### 2. Add pause check in the handoff block too
 
-## Resultado Esperado
+Before sending the handoff notification message (line 587+), also check if a manual pause was created to avoid sending duplicate/conflicting messages.
 
-| Cenário | Antes | Depois |
-|---------|-------|--------|
-| Slots por hora | 6 linhas (10min cada) | Mesmo, mas mais compactos |
-| Altura total da agenda | ~600px+ | ~400px |
-| Impressão | Cortada/ilegível | Cabe em 1-2 páginas A4 |
-| Legibilidade | Boa | Mantida (nome + procedimento visíveis) |
+## Summary of all pause checkpoints after fix
 
-## Visualização Comparativa
+| Checkpoint | Location | Purpose |
+|-----------|----------|---------|
+| 1. fromMe detection | Line 325 | Creates pause + hard return for secretary messages |
+| 2. Before AI call | Line 528 | Blocks processing if pause already exists |
+| 3. After AI response | NEW | Catches pauses created during AI processing (race condition fix) |
 
-**Antes (uma consulta de 30min ocupa 3 linhas):**
-```
-08:00 | [Maria Silva - Consulta Ginecológica - 30min]
-08:10 | ↑ Maria
-08:20 | ↑ Maria
-08:30 | [Livre]
-```
+## File to modify
 
-**Depois (mesma consulta em modo compacto):**
-```
-08:00 | Maria Silva | Consulta | 30min
-08:30 | + Livre
-```
+| File | Change |
+|------|--------|
+| `supabase/functions/zapi-webhook/index.ts` | Add second `shouldPauseClara` check after AI response, before sending via Z-API |
 
-Ou com card de altura proporcional:
-```
-08:00 |╔══════════════════════════════╗
-      |║ Maria Silva - Consulta 30min ║
-08:30 |╚══════════════════════════════╝
-      | + Livre
+## Expected behavior after fix
+
+```text
+Timeline (race condition - FIXED):
+
+Patient msg webhook       Secretary msg webhook
+    |                           |
+    v                           |
+ Check pause -> NO              |
+    |                           |
+    v                           v
+ Call AI (takes 3-5s)     Create auto-pause
+    |                           |
+    v                           v
+ Check pause -> YES!          Return OK
+    |
+    v
+ BLOCK response (return)
 ```
 
+Clara will remain completely silent during the pause period and will only resume after the pause expires (1 hour) or manual resolution.
