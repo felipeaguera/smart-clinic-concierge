@@ -72,8 +72,14 @@ function extractPhoneFromPayload(body: any): string | null {
   return body.phone || body.from?.replace("@c.us", "") || null;
 }
 
-// Helper to check if a message is from Clara (sent via API) by checking provider_message_id
-async function isMessageFromClara(supabase: any, messageId: string): Promise<boolean> {
+// Helper to check if a message is from Clara (sent via API)
+// PRIMARY: uses fromApi field from Z-API payload (no race condition)
+// FALLBACK: checks provider_message_id in DB
+function isMessageFromClaraByPayload(body: any): boolean {
+  return body.fromApi === true;
+}
+
+async function isMessageFromClaraByDB(supabase: any, messageId: string): Promise<boolean> {
   if (!messageId) return false;
   
   const { data: existingMsg } = await supabase
@@ -107,12 +113,16 @@ async function createOrUpdateAutoPause(
   const oneHourFromNow = new Date(Date.now() + 60 * 60 * 1000).toISOString();
   
   // Check if there's already a handoff entry for this phone
-  const { data: existingHandoff } = await supabase
+  // CORREÇÃO: usar limit(1) em vez de maybeSingle() para evitar erro com múltiplas linhas
+  const { data: existingHandoffs } = await supabase
     .from("human_handoff_queue")
     .select("id, status")
     .eq("phone", phone)
     .or(`status.eq.open,auto_pause_until.gt.${new Date().toISOString()}`)
-    .maybeSingle();
+    .order("created_at", { ascending: false })
+    .limit(1);
+  
+  const existingHandoff = existingHandoffs?.[0] || null;
   
   if (existingHandoff) {
     // Update existing entry with new pause time
@@ -201,14 +211,15 @@ async function shouldPauseClara(supabase: any, phone: string): Promise<boolean> 
   const now = new Date().toISOString();
   
   // Check for OPEN handoff (manual handoff request)
-  const { data: openHandoff } = await supabase
+  // CORREÇÃO: usar limit(1) em vez de maybeSingle() para evitar erro com múltiplas linhas
+  const { data: openHandoffs } = await supabase
     .from("human_handoff_queue")
     .select("id")
     .eq("phone", phone)
     .eq("status", "open")
-    .maybeSingle();
+    .limit(1);
   
-  if (openHandoff) {
+  if (openHandoffs && openHandoffs.length > 0) {
     console.log("🔴 Handoff OPEN encontrado para:", phone);
     return true;
   }
@@ -339,14 +350,28 @@ Deno.serve(async (req) => {
         );
       }
 
-      // Check if this message was sent by Clara (already exists in our database)
-      const isFromClara = await isMessageFromClara(supabase, messageId);
-      console.log("   - isFromClara (exists in DB):", isFromClara);
-      
-      if (isFromClara) {
-        console.log("✅ Mensagem é da Clara (via API), ignorando");
+      // ============================================================
+      // CORREÇÃO PRINCIPAL: Usar fromApi como check primário
+      // fromApi === true → mensagem enviada via Z-API API (Clara)
+      // fromApi === false/undefined → mensagem manual (secretária)
+      // Isso elimina a race condition do DB lookup
+      // ============================================================
+      if (isMessageFromClaraByPayload(body)) {
+        console.log("✅ Mensagem enviada via API (fromApi=true), ignorando - é da Clara");
         return new Response(
-          JSON.stringify({ success: true, ignored: true, reason: "from_clara" }),
+          JSON.stringify({ success: true, ignored: true, reason: "from_clara_api" }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      
+      // BACKUP: Check via DB (caso fromApi não esteja presente no payload)
+      const isFromClaraDB = await isMessageFromClaraByDB(supabase, messageId);
+      console.log("   - isFromClara (DB check):", isFromClaraDB);
+      
+      if (isFromClaraDB) {
+        console.log("✅ Mensagem é da Clara (encontrada no DB), ignorando");
+        return new Response(
+          JSON.stringify({ success: true, ignored: true, reason: "from_clara_db" }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
