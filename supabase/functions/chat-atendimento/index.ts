@@ -1227,7 +1227,7 @@ ${examTypes
               if (nextJson.horarios_disponiveis && nextJson.horarios_disponiveis.length > 0) {
                 foundNextSlot = {
                   data: nextDate,
-                  horarios_disponiveis: nextJson.horarios_disponiveis.slice(0, 3),
+                  horarios_disponiveis: selectSpacedSlots(nextJson.horarios_disponiveis, 3, 30),
                   doctor: nextJson.doctor,
                 };
                 break;
@@ -1245,7 +1245,7 @@ ${examTypes
             // Limitar a 3 horários
             result = {
               ...fullResult,
-              horarios_disponiveis: fullResult.horarios_disponiveis.slice(0, 3),
+              horarios_disponiveis: selectSpacedSlots(fullResult.horarios_disponiveis, 3, 30),
               total_horarios_disponiveis: fullResult.horarios_disponiveis.length,
             };
           }
@@ -1265,7 +1265,8 @@ ${examTypes
 
           if (fullCategoriaResult.disponibilidades && Array.isArray(fullCategoriaResult.disponibilidades)) {
             for (const disp of fullCategoriaResult.disponibilidades) {
-              const slots = disp.slots || [];
+              // FIX: agenda-disponibilidade-categoria retorna "horarios_disponiveis", não "slots"
+              const slots = disp.slots || disp.horarios_disponiveis || [];
 
               if (slots.length === 0) {
                 // Buscar próxima vaga para este médico
@@ -1280,21 +1281,25 @@ ${examTypes
                   if (nextJson.horarios_disponiveis && nextJson.horarios_disponiveis.length > 0) {
                     foundNextSlot = {
                       data: nextDate,
-                      horarios: nextJson.horarios_disponiveis.slice(0, 3),
+                      horarios: selectSpacedSlots(nextJson.horarios_disponiveis, 3, 30),
                     };
                     break;
                   }
                 }
+                // Remover campos brutos para que a IA não veja todos os slots
+                const { horarios_disponiveis: _hd, slots: _sl, ...dispClean } = disp;
                 processedDisponibilidades.push({
-                  ...disp,
+                  ...dispClean,
                   slots: [],
                   proxima_vaga: foundNextSlot,
                 });
               } else {
-                // Limitar a 3 horários
+                // Aplicar espaçamento nos horários (não mostrar sequenciais)
+                const spacedSlots = selectSpacedSlots(slots, 3, 30);
+                const { horarios_disponiveis: _hd, slots: _sl, ...dispClean } = disp;
                 processedDisponibilidades.push({
-                  ...disp,
-                  slots: slots.slice(0, 3),
+                  ...dispClean,
+                  slots: spacedSlots,
                   total_slots: slots.length,
                 });
               }
