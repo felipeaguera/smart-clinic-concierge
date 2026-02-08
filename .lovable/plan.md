@@ -1,72 +1,121 @@
 
 
-# Reestruturar Medicina do Trabalho no Prompt da Clara
+# Corrigir Pausa da Clara: Bug do chatLid + Seguranca via Prompt
 
-## Problemas Identificados
+## Causa Raiz Identificada
 
-1. **Sem numero de secao** -- O bloco de Medicina do Trabalho (linhas 53-62) esta solto entre a secao 0 e a secao 1, sem numeracao propria. Isso faz com que a IA possa dar menos prioridade a essas regras.
+O Z-API envia o campo `chatLid` para identificar o chat, mas o codigo usa `body.chatId` (que e `undefined`). Isso causa:
 
-2. **Secao 7 nao lista Medicina do Trabalho** -- A secao "ENCAMINHAR PARA HUMANO" (linha 317-326) nao menciona Medicina do Trabalho como motivo valido para encaminhamento, criando uma inconsistencia.
+- Mapeamento @lid nunca e atualizado com mensagens inbound
+- Mensagens manuais da secretaria criam pausa para o telefone ERRADO
+- Clara continua respondendo ao paciente real
 
-3. **Tool `encaminhar_humano` nao menciona Med. do Trabalho** -- A descricao da ferramenta (linha 1122-1123) lista convonio, desconto, etc., mas nao inclui Medicina do Trabalho, o que pode fazer a IA nao acionar a tool corretamente.
+Evidencia dos logs:
 
-4. **Termo ambiguo "assistencial"** -- Esse keyword na lista pode causar falsos positivos com consultas medicas normais (assistenciais).
-
-## Mudancas Planejadas
-
-### 1. Mover Medicina do Trabalho para secao numerada propria
-
-Remover o bloco solto das linhas 53-62 e criar uma nova **Secao 1A** (ou renumerar como parte da secao 1 - Regras Inviolaveis), posicionando-o como uma regra de alta prioridade com formato claro e numerado.
-
-O conteudo sera:
-
-```
-1A. MEDICINA DO TRABALHO (ENCAMINHAMENTO OBRIGATORIO)
-
-Palavras-chave: exames ocupacionais, ASO, PCMSO, PPRA, PGR,
-saude ocupacional, afastamento, aptidao laboral, riscos
-ocupacionais, CAT, admissional, periodico, demissional,
-medicina do trabalho, saude do trabalhador.
-
-REGRAS:
-- Ao detectar qualquer uma dessas palavras-chave, Clara pode
-  fazer UMA pergunta simples para confirmar o tema.
-- Confirmada a relacao com Medicina do Trabalho:
-  -> Chamar encaminhar_humano com motivo "Medicina do Trabalho"
-  -> NAO tentar resolver, NAO pedir detalhes clinicos
-  -> NAO fornecer orientacoes adicionais
+```text
+Inbound (paciente):     chatLid = "242094522282192@lid", phone = "5516981275767"
+FromMe  (secretaria):   rawPhone = "242094522282192@lid" -> resolve para 5515991008960 (ERRADO!)
+Auto-pause criado para: 5515991008960 (deveria ser 5516981275767)
 ```
 
-**Nota**: O termo "assistencial" sera removido da lista de keywords por ser ambiguo.
+## Solucao em Duas Camadas
 
-### 2. Adicionar Medicina do Trabalho na Secao 7
+### Camada 1: Corrigir bug do chatLid (causa raiz)
 
-Na lista de motivos para encaminhar para humano (linhas 319-326), adicionar:
+No `zapi-webhook/index.ts`, substituir `body.chatId` por `body.chatLid || body.chatId` em todos os lugares:
 
+**Local 1 - Mapeamento em mensagens inbound (linha ~522):**
 ```
-- Medicina do Trabalho (ver Secao 1A)
-```
-
-### 3. Atualizar descricao da tool `encaminhar_humano`
-
-Na definicao da ferramenta (linha 1122-1123), incluir Medicina do Trabalho na descricao:
-
-```
-"Encaminha para atendente humano. Usar para: convonio, desconto,
-item sem preco, pedido explicito, duvida clinica, TROCA DE
-HORARIO ou REAGENDAMENTO, MEDICINA DO TRABALHO."
+body.chatLid?.includes("@lid") || body.chatId?.includes("@lid")
 ```
 
-## Resumo das alteracoes
+**Local 2 - Resolucao de phone em fromMe (linha ~394):**
+```
+const lidId = body.chatLid || body.chatId || rawPhone;
+```
+
+**Local 3 - Segundo uso no fromMe (linha ~412):**
+```
+const lidId = body.chatLid || body.chatId || rawPhone;
+```
+
+Isso faz o mapeamento ser criado/atualizado corretamente a cada mensagem inbound, e consultado com o lid correto em mensagens fromMe.
+
+### Camada 2: Seguranca via Prompt (defesa em profundidade)
+
+Mesmo corrigindo o bug, adicionar uma camada extra no prompt para que Clara SAIBA quando a secretaria esta respondendo.
+
+**2A. Adicionar coluna `source` na tabela `whatsapp_messages`:**
+```sql
+ALTER TABLE whatsapp_messages
+ADD COLUMN source text NOT NULL DEFAULT 'patient';
+```
+
+Valores possiveis: `patient`, `clara`, `secretary`
+
+**2B. Atualizar os saves no webhook:**
+
+| Situacao | source |
+|----------|--------|
+| Mensagem do paciente (inbound) | `patient` |
+| Resposta da Clara (outbound via API) | `clara` |
+| Mensagem manual da secretaria (fromMe, nao API) | `secretary` |
+
+**2C. Ao montar contexto, incluir tag nas mensagens da secretaria:**
+
+Quando buscar mensagens para enviar ao chat-atendimento, se `source = 'secretary'`, prefixar o conteudo com `[SECRETARIA]`:
+
+```typescript
+const formattedHistory = sessionMessages.map(msg => ({
+  role: msg.direction === "inbound" ? "user" : "assistant",
+  content: msg.source === "secretary"
+    ? `[SECRETÁRIA] ${msg.content}`
+    : msg.content,
+}));
+```
+
+**2D. Adicionar regra no SYSTEM_PROMPT (chat-atendimento):**
+
+Nova regra na secao 1 (Regras Inviolaveis):
+
+```
+REGRA DE PAUSA - ATENDIMENTO HUMANO:
+- Se no historico recente houver mensagens marcadas com [SECRETARIA],
+  significa que um atendente humano esta respondendo ao paciente.
+- Nesse caso, Clara deve responder APENAS: "[PAUSA]"
+- NAO cumprimentar, NAO tentar ajudar, NAO continuar o atendimento.
+- A secretaria tem prioridade absoluta.
+```
+
+**2E. No webhook, detectar resposta "[PAUSA]" e nao enviar:**
+
+Antes de enviar via Z-API:
+
+```typescript
+if (aiResponse.trim() === "[PAUSA]" || aiResponse.includes("[PAUSA]")) {
+  console.log("Clara reconheceu pausa via prompt, nao enviando");
+  return new Response(JSON.stringify({ success: true, claraPaused: true }), ...);
+}
+```
+
+## Resumo das Alteracoes
 
 | Arquivo | Alteracao |
 |---------|-----------|
-| `supabase/functions/chat-atendimento/index.ts` | Remover bloco solto (linhas 53-62), criar secao 1A numerada, adicionar Med. do Trabalho na secao 7, atualizar descricao da tool |
+| `supabase/functions/zapi-webhook/index.ts` | Corrigir chatLid vs chatId (3 locais), adicionar source nos saves, detectar [PAUSA] na resposta, incluir source no contexto |
+| `supabase/functions/chat-atendimento/index.ts` | Adicionar regra de pausa via [SECRETARIA] no prompt |
+| Migration SQL | Adicionar coluna `source` em `whatsapp_messages` |
 
-## Resultado esperado
+## Por que duas camadas?
 
-- A IA tratara Medicina do Trabalho como regra de alta prioridade (secao numerada)
-- A secao 7 tera referencia cruzada, eliminando a inconsistencia
-- A tool `encaminhar_humano` sera acionada corretamente para esses casos
-- O termo "assistencial" nao causara mais falsos positivos
+- **Camada 1 (chatLid)**: Corrige o problema principal. A pausa sera criada para o telefone CORRETO.
+- **Camada 2 (prompt)**: Mesmo que alguma falha tecnica permita a Clara processar, ela VERA no contexto que a secretaria esta atuando e se recusara a responder.
+
+## Resultado Esperado
+
+1. Secretaria responde manualmente ao paciente
+2. Webhook detecta fromMe, resolve o telefone CORRETO via chatLid
+3. Pausa de 1h criada para o telefone correto
+4. Proxima mensagem do paciente: shouldPauseClara retorna true, Clara nao e chamada
+5. Se por qualquer motivo Clara FOR chamada, ela ve [SECRETARIA] no contexto e responde "[PAUSA]", que o webhook NAO envia
 
