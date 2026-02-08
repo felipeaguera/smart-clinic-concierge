@@ -423,6 +423,7 @@ export type Database = {
           id: string
           phone: string
           provider_message_id: string | null
+          source: string
         }
         Insert: {
           content: string
@@ -432,6 +433,7 @@ export type Database = {
           id?: string
           phone: string
           provider_message_id?: string | null
+          source?: string
         }
         Update: {
           content?: string
@@ -441,6 +443,7 @@ export type Database = {
           id?: string
           phone?: string
           provider_message_id?: string | null
+          source?: string
         }
         Relationships: []
       }

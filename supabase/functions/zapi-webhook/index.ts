@@ -391,7 +391,7 @@ Deno.serve(async (req) => {
       
       // Estratégia 2: Se tem @lid, tentar resolver via mapeamento
       if (!resolvedPhone || resolvedPhone.includes("@lid")) {
-        const lidId = body.chatId || rawPhone;
+        const lidId = body.chatLid || body.chatId || rawPhone;
         if (lidId?.includes("@lid")) {
           const mappedPhone = await getOrMapLidToPhone(supabase, lidId);
           if (mappedPhone) {
@@ -409,7 +409,7 @@ Deno.serve(async (req) => {
           console.log("📞 Telefone resolvido via referenceMessageId:", resolvedPhone);
           
           // Atualizar mapeamento se tínhamos um @lid
-          const lidId = body.chatId || rawPhone;
+          const lidId = body.chatLid || body.chatId || rawPhone;
           if (lidId?.includes("@lid")) {
             await getOrMapLidToPhone(supabase, lidId, resolvedPhone);
           }
@@ -424,7 +424,7 @@ Deno.serve(async (req) => {
           console.log("📞 Telefone resolvido via fallback (último inbound):", resolvedPhone);
           
           // Atualizar mapeamento se tínhamos um @lid
-          const lidId = body.chatId || rawPhone;
+          const lidId = body.chatLid || body.chatId || rawPhone;
           if (lidId?.includes("@lid")) {
             await getOrMapLidToPhone(supabase, lidId, resolvedPhone);
           }
@@ -445,6 +445,7 @@ Deno.serve(async (req) => {
             provider_message_id: messageId,
             direction: "outbound",
             content: text || "(mensagem manual)",
+            source: "secretary",
           });
           console.log("✅ Mensagem manual salva com sucesso");
         } catch (saveError) {
@@ -519,9 +520,10 @@ Deno.serve(async (req) => {
     // ============================================================
     // CORREÇÃO: Criar mapeamento lid → phone em mensagens inbound
     // ============================================================
-    if (body.chatId?.includes("@lid") && phone && !phone.includes("@")) {
+    const inboundLid = body.chatLid || body.chatId;
+    if (inboundLid?.includes("@lid") && phone && !phone.includes("@")) {
       console.log("📝 Mapeando @lid para telefone real em mensagem inbound");
-      await getOrMapLidToPhone(supabase, body.chatId, phone);
+      await getOrMapLidToPhone(supabase, inboundLid, phone);
     }
 
     // Check for duplicate message (idempotency)
@@ -547,6 +549,7 @@ Deno.serve(async (req) => {
       provider_message_id: messageId,
       direction: "inbound",
       content: text,
+      source: "patient",
     });
 
     // Check if Clara should be paused (handoff open OR auto-pause active)
@@ -572,7 +575,7 @@ Deno.serve(async (req) => {
     // Buscar últimas 30 mensagens não-expiradas, ordenadas da mais recente
     const { data: contextMessages } = await supabase
       .from("whatsapp_messages")
-      .select("direction, content, created_at")
+      .select("direction, content, created_at, source")
       .eq("phone", phone)
       .gt("expires_at", now.toISOString()) // Respeitar TTL de 24h
       .order("created_at", { ascending: false })
@@ -610,9 +613,11 @@ Deno.serve(async (req) => {
     const formattedHistory = sessionMessages
       .slice()
       .reverse() // Reverter para ordem cronológica (mais antiga primeiro)
-      .map((msg) => ({
+      .map((msg: any) => ({
         role: msg.direction === "inbound" ? "user" : "assistant",
-        content: msg.content,
+        content: msg.source === "secretary"
+          ? `[SECRETÁRIA] ${msg.content}`
+          : msg.content,
       }));
 
     // Call chat-atendimento backend function.
@@ -700,6 +705,7 @@ Deno.serve(async (req) => {
             provider_message_id: sendResult.messageId || null,
             direction: "outbound",
             content: handoffMessage,
+            source: "clara",
           });
           
           console.log("Handoff notification sent successfully");
@@ -717,6 +723,18 @@ Deno.serve(async (req) => {
 
       return new Response(
         JSON.stringify({ success: true, handoffCreated: true }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // ============================================================
+    // CAMADA 2: Detectar resposta "[PAUSA]" da Clara (defesa via prompt)
+    // Se Clara reconheceu que a secretária está atuando, NÃO enviar
+    // ============================================================
+    if (aiResponse && (aiResponse.trim() === "[PAUSA]" || aiResponse.includes("[PAUSA]"))) {
+      console.log("⏸️ Clara reconheceu pausa via prompt ([PAUSA] detectado), NÃO enviando");
+      return new Response(
+        JSON.stringify({ success: true, claraPaused: true, reason: "pausa_via_prompt" }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -752,6 +770,7 @@ Deno.serve(async (req) => {
             provider_message_id: sendResult.messageId || null,
             direction: "outbound",
             content: aiResponse,
+            source: "clara",
           });
         } else {
           console.error("Failed to send Z-API message:", await sendResponse.text());
