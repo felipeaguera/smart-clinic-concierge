@@ -1,111 +1,104 @@
 
-# Solucao Definitiva: Pausa da Clara via chatLid
 
-## Problema Raiz (com evidencia do banco)
+# Corrigir Clara listando todos os horarios (bug do field name)
 
-A funcao `getOrMapLidToPhone` tem um bug critico: ela NUNCA atualiza mapeamentos existentes.
+## Causa Raiz
 
-Evidencia do banco de dados:
-```text
-whatsapp_lid_mappings:
-  lid_id:     242094522282192@lid
-  phone:      5515991008960     (ERRADO - mapeamento de 5 dias atras)
-  updated_at: 2026-02-05        (NUNCA foi atualizado!)
+O bug esta no handler `buscar_disponibilidade_categoria` dentro de `chat-atendimento/index.ts`.
 
-Paciente REAL usando esse lid: 5516981275767 (Felipe Aguera)
-```
-
-Fluxo do bug:
-1. Secretaria envia mensagem manual ao paciente 5516981275767
-2. Z-API envia webhook com `chatLid: 242094522282192@lid`
-3. Codigo chama `getOrMapLidToPhone("242094522282192@lid", "5516981275767")`
-4. Funcao encontra mapeamento existente -> retorna `5515991008960` (ERRADO)
-5. Pausa criada para `5515991008960` em vez de `5516981275767`
-6. Paciente `5516981275767` continua recebendo respostas da Clara
-
-## Solucao: Usar chatLid como chave de pausa (bypass total da resolucao de telefone)
-
-A insight chave: o campo `chatLid` e o MESMO identificador tanto na mensagem do paciente (inbound) quanto na mensagem da secretaria (fromMe). Ele identifica a CONVERSA, nao o telefone. Entao podemos usalo diretamente para a pausa, sem precisar resolver telefone nenhum.
-
-### Alteracao 1: Adicionar coluna `chat_lid` na tabela human_handoff_queue
-
-```sql
-ALTER TABLE public.human_handoff_queue
-ADD COLUMN chat_lid text;
-```
-
-### Alteracao 2: Corrigir `getOrMapLidToPhone` para SEMPRE atualizar mapeamentos
-
-Quando a funcao recebe um `knownPhone` diferente do mapeamento existente, ela deve ATUALIZAR:
+A Edge Function `agenda-disponibilidade-categoria` retorna os horarios no campo **`horarios_disponiveis`**:
 
 ```text
-ANTES (bugado):
-  1. Encontra mapeamento existente
-  2. Retorna telefone antigo (NUNCA atualiza)
-  3. Ignora o knownPhone novo
-
-DEPOIS (corrigido):
-  1. Se knownPhone fornecido -> SEMPRE upsert e retornar knownPhone
-  2. Se nao tem knownPhone -> buscar mapeamento existente
-  3. Prioridade: knownPhone > mapeamento existente
+{
+  disponibilidades: [
+    {
+      doctor_id: "...",
+      doctor_nome: "Dr. Felipe Aguera",
+      horarios_disponiveis: [... TODOS os 36+ slots ...]   <-- campo real
+    }
+  ]
+}
 ```
 
-### Alteracao 3: Salvar chatLid ao criar auto-pause (fromMe handler)
+Porem, o handler em `chat-atendimento` (linha 1268) procura pelo campo errado:
 
-Quando a secretaria envia mensagem manual:
-```text
-1. Extrair chatLid = body.chatLid || body.chatId
-2. Salvar auto-pause com AMBOS: phone (resolvedPhone) E chat_lid (chatLid)
-3. Isso garante que a pausa funcione por qualquer um dos dois caminhos
+```typescript
+const slots = disp.slots || [];   // disp.slots NAO EXISTE! = undefined = []
 ```
 
-### Alteracao 4: Verificar pausa por chatLid TAMBEM (shouldPauseClara)
+Como `slots` fica vazio, o codigo entra no branch de "buscar proxima vaga" e faz `...disp` (spread), que **inclui o campo original `horarios_disponiveis` com TODOS os slots**. O modelo AI ve o array completo e lista todos.
 
-Na funcao `shouldPauseClara`, adicionar verificacao dupla:
-```text
-ANTES: verifica apenas por phone
-DEPOIS: verifica por phone OU por chat_lid
+## Evidencia
 
-Se qualquer um dos dois tiver pausa ativa -> Clara NAO responde
+O mesmo bug NAO ocorre em `buscar_proxima_vaga` porque la o codigo JA verifica ambos os nomes de campo:
+
+```typescript
+// buscar_proxima_vaga (CORRETO - linhas 1381-1385)
+const slotsKey = Array.isArray(d?.slots)
+  ? "slots"
+  : Array.isArray(d?.horarios_disponiveis)
+    ? "horarios_disponiveis"
+    : null;
 ```
 
-O inbound do paciente traz AMBOS: `body.phone` E `body.chatLid`. Passamos os dois para a funcao.
+Mas `buscar_disponibilidade_categoria` (linhas 1266-1306) so verifica `disp.slots`, ignorando `disp.horarios_disponiveis`.
 
-### Alteracao 5: Simplificar fromMe handler
+## Correcao
 
-No handler de mensagens fromMe (secretaria), simplificar a logica:
-```text
-1. PRIMARY: usar body.phone diretamente (Z-API SEMPRE inclui o telefone do destinatario)
-2. SECONDARY: usar chatLid para criar pausa redundante
-3. INSURANCE: resolver via lid mapping como fallback
+No handler `buscar_disponibilidade_categoria` (linhas ~1266-1306 de `chat-atendimento/index.ts`):
+
+1. Trocar `const slots = disp.slots || []` por `const slots = disp.slots || disp.horarios_disponiveis || []`
+2. Ao fazer spread com `...disp`, remover o campo `horarios_disponiveis` original para que a IA nao veja os slots brutos - substituir por `slots` limitados
+
+### Codigo corrigido:
+
+```typescript
+for (const disp of fullCategoriaResult.disponibilidades) {
+  const slots = disp.slots || disp.horarios_disponiveis || [];
+
+  if (slots.length === 0) {
+    // Buscar proxima vaga (sem mudanca)
+    ...
+    const { horarios_disponiveis: _, slots: __, ...dispClean } = disp;
+    processedDisponibilidades.push({
+      ...dispClean,
+      slots: [],
+      proxima_vaga: foundNextSlot,
+    });
+  } else {
+    // Aplicar selectSpacedSlots (igual ao buscar_proxima_vaga)
+    const spacedSlots = selectSpacedSlots(slots, 3, 30);
+    const { horarios_disponiveis: _, slots: __, ...dispClean } = disp;
+    processedDisponibilidades.push({
+      ...dispClean,
+      slots: spacedSlots,
+      total_slots: slots.length,
+    });
+  }
+}
 ```
 
-## Resumo das alteracoes
+## Alteracao adicional: selectSpacedSlots no buscar_disponibilidade
 
-| Arquivo | O que muda |
+O handler `buscar_disponibilidade` (para medico especifico) tambem usa `slice(0, 3)` simples em vez de `selectSpacedSlots`. Isso pode resultar em 3 horarios sequenciais (08:00, 08:10, 08:20) em vez de espacados. Vou corrigir para usar `selectSpacedSlots` tambem:
+
+```typescript
+// ANTES (linha 1248):
+horarios_disponiveis: fullResult.horarios_disponiveis.slice(0, 3),
+
+// DEPOIS:
+horarios_disponiveis: selectSpacedSlots(fullResult.horarios_disponiveis, 3, 30),
+```
+
+## Resumo
+
+| Arquivo | Alteracao |
 |---------|-----------|
-| Migration SQL | Adicionar coluna `chat_lid` em `human_handoff_queue` |
-| `supabase/functions/zapi-webhook/index.ts` | Corrigir `getOrMapLidToPhone` (sempre atualizar), passar chatLid para createOrUpdateAutoPause, passar chatLid para shouldPauseClara |
+| `supabase/functions/chat-atendimento/index.ts` | Corrigir field name `slots` vs `horarios_disponiveis` no handler buscar_disponibilidade_categoria; usar `selectSpacedSlots` em vez de `slice(0,3)` nos 3 handlers |
 
-## Por que esta solucao e definitiva?
+## Resultado Esperado
 
-O problema fundamental de TODAS as tentativas anteriores era depender de resolucao de telefone (phone resolution), que falha quando:
-- Mapeamento lid stale (como agora)
-- body.phone ausente ou incorreto
-- Race conditions no DB
+- Clara mostrara exatamente 3 horarios espacados (~30min entre eles)
+- Nenhum horario sera inventado (somente vindos da ferramenta)
+- A regra do prompt sera respeitada porque agora os dados da ferramenta ja vem limitados
 
-Ao usar `chatLid` como chave ADICIONAL de pausa, eliminamos essa dependencia:
-- chatLid e o MESMO valor na mensagem da secretaria E do paciente
-- Nao precisa resolver telefone para funcionar
-- E imutavel dentro da mesma conversa
-
-Fluxo com a correcao:
-```text
-1. Secretaria responde manualmente
-2. Webhook detecta fromMe=true, fromApi=false
-3. Salva auto-pause com chat_lid="242094522282192@lid" E phone="5516981275767"
-4. Paciente envia mensagem
-5. shouldPauseClara verifica por phone="5516981275767" OU chat_lid="242094522282192@lid"
-6. Encontra pausa ativa -> Clara NAO responde
-7. Mesmo se phone resolver errado, chatLid SEMPRE bate
-```
