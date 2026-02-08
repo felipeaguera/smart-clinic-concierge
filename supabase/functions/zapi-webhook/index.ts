@@ -583,6 +583,24 @@ Deno.serve(async (req) => {
     const aiResponse = chatResult.message || chatResult.resposta || chatResult.response || "";
     const humanHandoff = chatResult.handoff_humano || chatResult.humanHandoff || chatResult.human_handoff || false;
 
+    // ============================================================
+    // SECOND PAUSE CHECK: Catch pauses created during AI processing (race condition fix)
+    // ============================================================
+    const isPausedAfterAI = await shouldPauseClara(supabase, phone);
+    if (isPausedAfterAI) {
+      console.log("⏸️ PAUSE DETECTED AFTER AI PROCESSING for:", phone);
+      console.log("   - AI response will NOT be sent");
+      console.log("   - Secretary intervened during AI processing");
+      return new Response(
+        JSON.stringify({ 
+          success: true, 
+          claraPaused: true, 
+          reason: "pause_detected_after_ai" 
+        }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     // If AI signals handoff, create handoff entry and send notification message
     if (humanHandoff) {
       console.log("AI requested human handoff");
