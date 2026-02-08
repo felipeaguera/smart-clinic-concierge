@@ -18,29 +18,33 @@ async function getOrMapLidToPhone(
     return lidId || null;
   }
   
-  console.log("🔄 Tentando resolver @lid:", lidId);
+  console.log("🔄 Tentando resolver @lid:", lidId, "knownPhone:", knownPhone || "(nenhum)");
   
-  // Tentar buscar mapeamento existente
-  const { data: mapping, error } = await supabase
+  // CORREÇÃO DEFINITIVA: Se temos knownPhone válido, SEMPRE fazer upsert e retornar ele
+  // Prioridade: knownPhone > mapeamento existente (resolve bug de mapeamento stale)
+  if (knownPhone && !knownPhone.includes("@")) {
+    console.log("📝 UPSERT mapeamento (knownPhone tem prioridade):", lidId, "->", knownPhone);
+    const { error } = await supabase.from("whatsapp_lid_mappings").upsert({
+      lid_id: lidId,
+      phone: knownPhone,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'lid_id' });
+    if (error) {
+      console.log("⚠️ Erro no upsert do mapeamento:", error.message);
+    }
+    return knownPhone;
+  }
+  
+  // Sem knownPhone: buscar mapeamento existente como fallback
+  const { data: mapping } = await supabase
     .from("whatsapp_lid_mappings")
     .select("phone")
     .eq("lid_id", lidId)
     .maybeSingle();
     
   if (mapping?.phone) {
-    console.log("✅ Mapeamento encontrado:", lidId, "->", mapping.phone);
+    console.log("✅ Mapeamento existente encontrado:", lidId, "->", mapping.phone);
     return mapping.phone;
-  }
-  
-  // Se temos um telefone conhecido válido, criar mapeamento
-  if (knownPhone && !knownPhone.includes("@")) {
-    console.log("📝 Criando novo mapeamento:", lidId, "->", knownPhone);
-    await supabase.from("whatsapp_lid_mappings").upsert({
-      lid_id: lidId,
-      phone: knownPhone,
-      updated_at: new Date().toISOString()
-    }, { onConflict: 'lid_id' });
-    return knownPhone;
   }
   
   console.log("⚠️ Não foi possível resolver @lid:", lidId);
@@ -95,7 +99,8 @@ async function isMessageFromClaraByDB(supabase: any, messageId: string): Promise
 async function createOrUpdateAutoPause(
   supabase: any,
   phone: string,
-  senderName: string | null
+  senderName: string | null,
+  chatLid?: string | null
 ): Promise<boolean> {
   // Safety: require a real phone number (digits only is the expectation in our DB)
   if (!phone || phone.includes("@")) {
@@ -112,12 +117,15 @@ async function createOrUpdateAutoPause(
   
   const oneHourFromNow = new Date(Date.now() + 60 * 60 * 1000).toISOString();
   
-  // Check if there's already a handoff entry for this phone
-  // CORREÇÃO: usar limit(1) em vez de maybeSingle() para evitar erro com múltiplas linhas
+  // Check if there's already a handoff entry for this phone OR this chatLid
+  const orFilter = chatLid 
+    ? `phone.eq.${phone},chat_lid.eq.${chatLid}`
+    : `phone.eq.${phone}`;
+  
   const { data: existingHandoffs } = await supabase
     .from("human_handoff_queue")
     .select("id, status")
-    .eq("phone", phone)
+    .or(orFilter)
     .or(`status.eq.open,auto_pause_until.gt.${new Date().toISOString()}`)
     .order("created_at", { ascending: false })
     .limit(1);
@@ -125,22 +133,26 @@ async function createOrUpdateAutoPause(
   const existingHandoff = existingHandoffs?.[0] || null;
   
   if (existingHandoff) {
-    // Update existing entry with new pause time
+    // Update existing entry with new pause time AND chatLid
+    const updateData: any = { auto_pause_until: oneHourFromNow };
+    if (chatLid) updateData.chat_lid = chatLid;
+    
     await supabase
       .from("human_handoff_queue")
-      .update({ auto_pause_until: oneHourFromNow })
+      .update(updateData)
       .eq("id", existingHandoff.id);
-    console.log("✅ Auto-pause atualizado para:", phone, "até:", oneHourFromNow);
+    console.log("✅ Auto-pause atualizado para:", phone, "chat_lid:", chatLid, "até:", oneHourFromNow);
     return true;
   } else {
-    // Create new entry with auto-pause (status = 'resolved' since it's automatic)
+    // Create new entry with auto-pause and chatLid
     await supabase.from("human_handoff_queue").insert({
       phone,
       patient_name: senderName,
-      status: "resolved", // Not a manual handoff, just auto-pause
+      status: "resolved",
       auto_pause_until: oneHourFromNow,
+      chat_lid: chatLid || null,
     });
-    console.log("✅ Auto-pause criado para:", phone, "até:", oneHourFromNow);
+    console.log("✅ Auto-pause criado para:", phone, "chat_lid:", chatLid, "até:", oneHourFromNow);
     return true;
   }
 }
@@ -202,41 +214,52 @@ async function getRecentInboundPhone(supabase: any): Promise<string | null> {
 // ============================================================
 // CORREÇÃO: Verificar pausa ignorando status (QUALQUER status com auto_pause_until)
 // ============================================================
-async function shouldPauseClara(supabase: any, phone: string): Promise<boolean> {
-  // Only check real phone numbers (not internal @lid identifiers)
-  if (!phone || phone.includes("@lid")) {
+async function shouldPauseClara(supabase: any, phone: string, chatLid?: string | null): Promise<boolean> {
+  // Need at least one valid identifier
+  if (!phone && !chatLid) {
     return false;
   }
   
   const now = new Date().toISOString();
   
-  // Check for OPEN handoff (manual handoff request)
-  // CORREÇÃO: usar limit(1) em vez de maybeSingle() para evitar erro com múltiplas linhas
+  // Build OR filter: check by phone AND/OR chat_lid
+  const orParts: string[] = [];
+  if (phone && !phone.includes("@lid")) {
+    orParts.push(`phone.eq.${phone}`);
+  }
+  if (chatLid) {
+    orParts.push(`chat_lid.eq.${chatLid}`);
+  }
+  
+  if (orParts.length === 0) return false;
+  
+  const orFilter = orParts.join(",");
+  
+  // Check for OPEN handoff by phone OR chatLid
   const { data: openHandoffs } = await supabase
     .from("human_handoff_queue")
     .select("id")
-    .eq("phone", phone)
+    .or(orFilter)
     .eq("status", "open")
     .limit(1);
   
   if (openHandoffs && openHandoffs.length > 0) {
-    console.log("🔴 Handoff OPEN encontrado para:", phone);
+    console.log("🔴 Handoff OPEN encontrado para phone:", phone, "ou chat_lid:", chatLid);
     return true;
   }
   
-  // CORREÇÃO: Check for active auto-pause (ANY status, not just resolved)
-  // Qualquer registro com auto_pause_until no futuro deve pausar a Clara
+  // Check for active auto-pause by phone OR chatLid
   const { data: autoPause } = await supabase
     .from("human_handoff_queue")
-    .select("id, auto_pause_until, status")
-    .eq("phone", phone)
+    .select("id, auto_pause_until, status, phone, chat_lid")
+    .or(orFilter)
     .gt("auto_pause_until", now)
     .order("auto_pause_until", { ascending: false })
     .limit(1)
     .maybeSingle();
   
   if (autoPause) {
-    console.log("⏸️ Auto-pause ativo para:", phone, "status:", autoPause.status, "até:", autoPause.auto_pause_until);
+    console.log("⏸️ Auto-pause ativo! Encontrado via phone:", autoPause.phone, "chat_lid:", autoPause.chat_lid, "status:", autoPause.status, "até:", autoPause.auto_pause_until);
     return true;
   }
   
@@ -454,12 +477,14 @@ Deno.serve(async (req) => {
         }
       }
       
-      // Criar pausa automática
+      // Criar pausa automática com chatLid para redundância
+      const chatLidForPause = body.chatLid || body.chatId || null;
       console.log("   - Criando pausa automática de 1 hora...");
-      const pauseCreated = await createOrUpdateAutoPause(supabase, resolvedPhone || "", null);
+      console.log("   - chatLid para pausa:", chatLidForPause);
+      const pauseCreated = await createOrUpdateAutoPause(supabase, resolvedPhone || "", null, chatLidForPause);
       
       if (pauseCreated) {
-        console.log("✅ Pausa automática criada/atualizada com sucesso para:", resolvedPhone);
+        console.log("✅ Pausa automática criada/atualizada com sucesso para:", resolvedPhone, "chat_lid:", chatLidForPause);
       } else {
         console.log(
           "⚠️ Não foi possível criar pausa automática (sem phone real). Raw:",
@@ -553,9 +578,11 @@ Deno.serve(async (req) => {
     });
 
     // Check if Clara should be paused (handoff open OR auto-pause active)
-    const isPaused = await shouldPauseClara(supabase, phone);
+    // CORREÇÃO DEFINITIVA: Verificar por phone E por chatLid
+    const inboundChatLid = body.chatLid || body.chatId || null;
+    const isPaused = await shouldPauseClara(supabase, phone, inboundChatLid);
     if (isPaused) {
-      console.log("⏸️ CLARA PAUSADA para telefone:", phone);
+      console.log("⏸️ CLARA PAUSADA para telefone:", phone, "chatLid:", inboundChatLid);
       console.log("   - Motivo: handoff ativo ou pausa automática (secretária respondendo)");
       console.log("   - A Clara NÃO responderá esta mensagem");
       return new Response(
@@ -653,9 +680,9 @@ Deno.serve(async (req) => {
     // ============================================================
     // SECOND PAUSE CHECK: Catch pauses created during AI processing (race condition fix)
     // ============================================================
-    const isPausedAfterAI = await shouldPauseClara(supabase, phone);
+    const isPausedAfterAI = await shouldPauseClara(supabase, phone, inboundChatLid);
     if (isPausedAfterAI) {
-      console.log("⏸️ PAUSE DETECTED AFTER AI PROCESSING for:", phone);
+      console.log("⏸️ PAUSE DETECTED AFTER AI PROCESSING for:", phone, "chatLid:", inboundChatLid);
       console.log("   - AI response will NOT be sent");
       console.log("   - Secretary intervened during AI processing");
       return new Response(

@@ -213,6 +213,7 @@ export type Database = {
       human_handoff_queue: {
         Row: {
           auto_pause_until: string | null
+          chat_lid: string | null
           created_at: string
           id: string
           patient_name: string | null
@@ -223,6 +224,7 @@ export type Database = {
         }
         Insert: {
           auto_pause_until?: string | null
+          chat_lid?: string | null
           created_at?: string
           id?: string
           patient_name?: string | null
@@ -233,6 +235,7 @@ export type Database = {
         }
         Update: {
           auto_pause_until?: string | null
+          chat_lid?: string | null
           created_at?: string
           id?: string
           patient_name?: string | null
