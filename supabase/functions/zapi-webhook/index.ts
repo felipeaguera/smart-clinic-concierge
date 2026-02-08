@@ -536,18 +536,55 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Load recent messages for context (MOST RECENT first, then reverse to chronological)
-    // IMPORTANT: Using ascending + limit would return the oldest messages and lose context.
+    // ============================================================
+    // SESSÃO CONVERSACIONAL: Carregar apenas mensagens da sessão ativa
+    // Uma sessão é delimitada por um gap de inatividade de 2+ horas.
+    // Isso evita que a Clara use contexto antigo/irrelevante.
+    // ============================================================
+    const SESSION_GAP_MS = 2 * 60 * 60 * 1000; // 2 horas em milissegundos
+    const now = new Date();
+    
+    // Buscar últimas 30 mensagens não-expiradas, ordenadas da mais recente
     const { data: contextMessages } = await supabase
       .from("whatsapp_messages")
       .select("direction, content, created_at")
       .eq("phone", phone)
+      .gt("expires_at", now.toISOString()) // Respeitar TTL de 24h
       .order("created_at", { ascending: false })
       .limit(30);
 
-    const formattedHistory = (contextMessages || [])
+    // Detectar limite da sessão ativa: percorrer do mais recente ao mais antigo
+    // e cortar quando houver gap > 2h entre mensagens consecutivas
+    const allMessages = contextMessages || [];
+    let sessionMessages = allMessages;
+    
+    if (allMessages.length > 1) {
+      let sessionCutIndex = 0; // Por padrão, usar todas
+      
+      for (let i = 0; i < allMessages.length - 1; i++) {
+        const currentTime = new Date(allMessages[i].created_at).getTime();
+        const nextTime = new Date(allMessages[i + 1].created_at).getTime();
+        const gap = currentTime - nextTime; // Ordem descendente, então current > next
+        
+        if (gap > SESSION_GAP_MS) {
+          sessionCutIndex = i + 1; // Cortar aqui - mensagens antes deste índice são da sessão atual
+          console.log(`📋 Sessão detectada: gap de ${Math.round(gap / 60000)}min entre mensagens ${i} e ${i+1}`);
+          console.log(`   - Usando apenas ${sessionCutIndex} mensagens da sessão ativa (de ${allMessages.length} disponíveis)`);
+          break;
+        }
+      }
+      
+      // Se encontrou um gap, pegar apenas as mensagens da sessão ativa
+      if (sessionCutIndex > 0) {
+        sessionMessages = allMessages.slice(0, sessionCutIndex);
+      }
+    }
+    
+    console.log(`📋 Contexto: ${sessionMessages.length} msgs na sessão ativa (de ${allMessages.length} carregadas)`);
+
+    const formattedHistory = sessionMessages
       .slice()
-      .reverse()
+      .reverse() // Reverter para ordem cronológica (mais antiga primeiro)
       .map((msg) => ({
         role: msg.direction === "inbound" ? "user" : "assistant",
         content: msg.content,
