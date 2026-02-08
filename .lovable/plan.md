@@ -1,121 +1,111 @@
 
+# Solucao Definitiva: Pausa da Clara via chatLid
 
-# Corrigir Pausa da Clara: Bug do chatLid + Seguranca via Prompt
+## Problema Raiz (com evidencia do banco)
 
-## Causa Raiz Identificada
+A funcao `getOrMapLidToPhone` tem um bug critico: ela NUNCA atualiza mapeamentos existentes.
 
-O Z-API envia o campo `chatLid` para identificar o chat, mas o codigo usa `body.chatId` (que e `undefined`). Isso causa:
+Evidencia do banco de dados:
+```text
+whatsapp_lid_mappings:
+  lid_id:     242094522282192@lid
+  phone:      5515991008960     (ERRADO - mapeamento de 5 dias atras)
+  updated_at: 2026-02-05        (NUNCA foi atualizado!)
 
-- Mapeamento @lid nunca e atualizado com mensagens inbound
-- Mensagens manuais da secretaria criam pausa para o telefone ERRADO
-- Clara continua respondendo ao paciente real
+Paciente REAL usando esse lid: 5516981275767 (Felipe Aguera)
+```
 
-Evidencia dos logs:
+Fluxo do bug:
+1. Secretaria envia mensagem manual ao paciente 5516981275767
+2. Z-API envia webhook com `chatLid: 242094522282192@lid`
+3. Codigo chama `getOrMapLidToPhone("242094522282192@lid", "5516981275767")`
+4. Funcao encontra mapeamento existente -> retorna `5515991008960` (ERRADO)
+5. Pausa criada para `5515991008960` em vez de `5516981275767`
+6. Paciente `5516981275767` continua recebendo respostas da Clara
+
+## Solucao: Usar chatLid como chave de pausa (bypass total da resolucao de telefone)
+
+A insight chave: o campo `chatLid` e o MESMO identificador tanto na mensagem do paciente (inbound) quanto na mensagem da secretaria (fromMe). Ele identifica a CONVERSA, nao o telefone. Entao podemos usalo diretamente para a pausa, sem precisar resolver telefone nenhum.
+
+### Alteracao 1: Adicionar coluna `chat_lid` na tabela human_handoff_queue
+
+```sql
+ALTER TABLE public.human_handoff_queue
+ADD COLUMN chat_lid text;
+```
+
+### Alteracao 2: Corrigir `getOrMapLidToPhone` para SEMPRE atualizar mapeamentos
+
+Quando a funcao recebe um `knownPhone` diferente do mapeamento existente, ela deve ATUALIZAR:
 
 ```text
-Inbound (paciente):     chatLid = "242094522282192@lid", phone = "5516981275767"
-FromMe  (secretaria):   rawPhone = "242094522282192@lid" -> resolve para 5515991008960 (ERRADO!)
-Auto-pause criado para: 5515991008960 (deveria ser 5516981275767)
+ANTES (bugado):
+  1. Encontra mapeamento existente
+  2. Retorna telefone antigo (NUNCA atualiza)
+  3. Ignora o knownPhone novo
+
+DEPOIS (corrigido):
+  1. Se knownPhone fornecido -> SEMPRE upsert e retornar knownPhone
+  2. Se nao tem knownPhone -> buscar mapeamento existente
+  3. Prioridade: knownPhone > mapeamento existente
 ```
 
-## Solucao em Duas Camadas
+### Alteracao 3: Salvar chatLid ao criar auto-pause (fromMe handler)
 
-### Camada 1: Corrigir bug do chatLid (causa raiz)
-
-No `zapi-webhook/index.ts`, substituir `body.chatId` por `body.chatLid || body.chatId` em todos os lugares:
-
-**Local 1 - Mapeamento em mensagens inbound (linha ~522):**
-```
-body.chatLid?.includes("@lid") || body.chatId?.includes("@lid")
+Quando a secretaria envia mensagem manual:
+```text
+1. Extrair chatLid = body.chatLid || body.chatId
+2. Salvar auto-pause com AMBOS: phone (resolvedPhone) E chat_lid (chatLid)
+3. Isso garante que a pausa funcione por qualquer um dos dois caminhos
 ```
 
-**Local 2 - Resolucao de phone em fromMe (linha ~394):**
-```
-const lidId = body.chatLid || body.chatId || rawPhone;
-```
+### Alteracao 4: Verificar pausa por chatLid TAMBEM (shouldPauseClara)
 
-**Local 3 - Segundo uso no fromMe (linha ~412):**
-```
-const lidId = body.chatLid || body.chatId || rawPhone;
-```
+Na funcao `shouldPauseClara`, adicionar verificacao dupla:
+```text
+ANTES: verifica apenas por phone
+DEPOIS: verifica por phone OU por chat_lid
 
-Isso faz o mapeamento ser criado/atualizado corretamente a cada mensagem inbound, e consultado com o lid correto em mensagens fromMe.
-
-### Camada 2: Seguranca via Prompt (defesa em profundidade)
-
-Mesmo corrigindo o bug, adicionar uma camada extra no prompt para que Clara SAIBA quando a secretaria esta respondendo.
-
-**2A. Adicionar coluna `source` na tabela `whatsapp_messages`:**
-```sql
-ALTER TABLE whatsapp_messages
-ADD COLUMN source text NOT NULL DEFAULT 'patient';
+Se qualquer um dos dois tiver pausa ativa -> Clara NAO responde
 ```
 
-Valores possiveis: `patient`, `clara`, `secretary`
+O inbound do paciente traz AMBOS: `body.phone` E `body.chatLid`. Passamos os dois para a funcao.
 
-**2B. Atualizar os saves no webhook:**
+### Alteracao 5: Simplificar fromMe handler
 
-| Situacao | source |
-|----------|--------|
-| Mensagem do paciente (inbound) | `patient` |
-| Resposta da Clara (outbound via API) | `clara` |
-| Mensagem manual da secretaria (fromMe, nao API) | `secretary` |
-
-**2C. Ao montar contexto, incluir tag nas mensagens da secretaria:**
-
-Quando buscar mensagens para enviar ao chat-atendimento, se `source = 'secretary'`, prefixar o conteudo com `[SECRETARIA]`:
-
-```typescript
-const formattedHistory = sessionMessages.map(msg => ({
-  role: msg.direction === "inbound" ? "user" : "assistant",
-  content: msg.source === "secretary"
-    ? `[SECRETÁRIA] ${msg.content}`
-    : msg.content,
-}));
+No handler de mensagens fromMe (secretaria), simplificar a logica:
+```text
+1. PRIMARY: usar body.phone diretamente (Z-API SEMPRE inclui o telefone do destinatario)
+2. SECONDARY: usar chatLid para criar pausa redundante
+3. INSURANCE: resolver via lid mapping como fallback
 ```
 
-**2D. Adicionar regra no SYSTEM_PROMPT (chat-atendimento):**
+## Resumo das alteracoes
 
-Nova regra na secao 1 (Regras Inviolaveis):
-
-```
-REGRA DE PAUSA - ATENDIMENTO HUMANO:
-- Se no historico recente houver mensagens marcadas com [SECRETARIA],
-  significa que um atendente humano esta respondendo ao paciente.
-- Nesse caso, Clara deve responder APENAS: "[PAUSA]"
-- NAO cumprimentar, NAO tentar ajudar, NAO continuar o atendimento.
-- A secretaria tem prioridade absoluta.
-```
-
-**2E. No webhook, detectar resposta "[PAUSA]" e nao enviar:**
-
-Antes de enviar via Z-API:
-
-```typescript
-if (aiResponse.trim() === "[PAUSA]" || aiResponse.includes("[PAUSA]")) {
-  console.log("Clara reconheceu pausa via prompt, nao enviando");
-  return new Response(JSON.stringify({ success: true, claraPaused: true }), ...);
-}
-```
-
-## Resumo das Alteracoes
-
-| Arquivo | Alteracao |
+| Arquivo | O que muda |
 |---------|-----------|
-| `supabase/functions/zapi-webhook/index.ts` | Corrigir chatLid vs chatId (3 locais), adicionar source nos saves, detectar [PAUSA] na resposta, incluir source no contexto |
-| `supabase/functions/chat-atendimento/index.ts` | Adicionar regra de pausa via [SECRETARIA] no prompt |
-| Migration SQL | Adicionar coluna `source` em `whatsapp_messages` |
+| Migration SQL | Adicionar coluna `chat_lid` em `human_handoff_queue` |
+| `supabase/functions/zapi-webhook/index.ts` | Corrigir `getOrMapLidToPhone` (sempre atualizar), passar chatLid para createOrUpdateAutoPause, passar chatLid para shouldPauseClara |
 
-## Por que duas camadas?
+## Por que esta solucao e definitiva?
 
-- **Camada 1 (chatLid)**: Corrige o problema principal. A pausa sera criada para o telefone CORRETO.
-- **Camada 2 (prompt)**: Mesmo que alguma falha tecnica permita a Clara processar, ela VERA no contexto que a secretaria esta atuando e se recusara a responder.
+O problema fundamental de TODAS as tentativas anteriores era depender de resolucao de telefone (phone resolution), que falha quando:
+- Mapeamento lid stale (como agora)
+- body.phone ausente ou incorreto
+- Race conditions no DB
 
-## Resultado Esperado
+Ao usar `chatLid` como chave ADICIONAL de pausa, eliminamos essa dependencia:
+- chatLid e o MESMO valor na mensagem da secretaria E do paciente
+- Nao precisa resolver telefone para funcionar
+- E imutavel dentro da mesma conversa
 
-1. Secretaria responde manualmente ao paciente
-2. Webhook detecta fromMe, resolve o telefone CORRETO via chatLid
-3. Pausa de 1h criada para o telefone correto
-4. Proxima mensagem do paciente: shouldPauseClara retorna true, Clara nao e chamada
-5. Se por qualquer motivo Clara FOR chamada, ela ve [SECRETARIA] no contexto e responde "[PAUSA]", que o webhook NAO envia
-
+Fluxo com a correcao:
+```text
+1. Secretaria responde manualmente
+2. Webhook detecta fromMe=true, fromApi=false
+3. Salva auto-pause com chat_lid="242094522282192@lid" E phone="5516981275767"
+4. Paciente envia mensagem
+5. shouldPauseClara verifica por phone="5516981275767" OU chat_lid="242094522282192@lid"
+6. Encontra pausa ativa -> Clara NAO responde
+7. Mesmo se phone resolver errado, chatLid SEMPRE bate
+```
