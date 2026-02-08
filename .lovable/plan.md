@@ -1,96 +1,72 @@
 
 
-# Fix: Clara responding despite active auto-pause
+# Reestruturar Medicina do Trabalho no Prompt da Clara
 
-## Root Cause
+## Problemas Identificados
 
-The current code has a **single pause checkpoint** before calling the AI. If a secretary sends a manual reply while the AI is processing, the pause is created AFTER the check has already passed. The AI response is then sent to the patient despite the active pause.
+1. **Sem numero de secao** -- O bloco de Medicina do Trabalho (linhas 53-62) esta solto entre a secao 0 e a secao 1, sem numeracao propria. Isso faz com que a IA possa dar menos prioridade a essas regras.
 
-```text
-Timeline (race condition):
+2. **Secao 7 nao lista Medicina do Trabalho** -- A secao "ENCAMINHAR PARA HUMANO" (linha 317-326) nao menciona Medicina do Trabalho como motivo valido para encaminhamento, criando uma inconsistencia.
 
-Patient msg webhook       Secretary msg webhook
-    |                           |
-    v                           |
- Check pause → NO               |
-    |                           |
-    v                           v
- Call AI (takes 3-5s)     Create auto-pause
-    |                           |
-    v                           v
- Send AI response ← BUG!     Return OK
+3. **Tool `encaminhar_humano` nao menciona Med. do Trabalho** -- A descricao da ferramenta (linha 1122-1123) lista convonio, desconto, etc., mas nao inclui Medicina do Trabalho, o que pode fazer a IA nao acionar a tool corretamente.
+
+4. **Termo ambiguo "assistencial"** -- Esse keyword na lista pode causar falsos positivos com consultas medicas normais (assistenciais).
+
+## Mudancas Planejadas
+
+### 1. Mover Medicina do Trabalho para secao numerada propria
+
+Remover o bloco solto das linhas 53-62 e criar uma nova **Secao 1A** (ou renumerar como parte da secao 1 - Regras Inviolaveis), posicionando-o como uma regra de alta prioridade com formato claro e numerado.
+
+O conteudo sera:
+
+```
+1A. MEDICINA DO TRABALHO (ENCAMINHAMENTO OBRIGATORIO)
+
+Palavras-chave: exames ocupacionais, ASO, PCMSO, PPRA, PGR,
+saude ocupacional, afastamento, aptidao laboral, riscos
+ocupacionais, CAT, admissional, periodico, demissional,
+medicina do trabalho, saude do trabalhador.
+
+REGRAS:
+- Ao detectar qualquer uma dessas palavras-chave, Clara pode
+  fazer UMA pergunta simples para confirmar o tema.
+- Confirmada a relacao com Medicina do Trabalho:
+  -> Chamar encaminhar_humano com motivo "Medicina do Trabalho"
+  -> NAO tentar resolver, NAO pedir detalhes clinicos
+  -> NAO fornecer orientacoes adicionais
 ```
 
-## Solution
+**Nota**: O termo "assistencial" sera removido da lista de keywords por ser ambiguo.
 
-Add a **second pause check** right before sending the AI response via Z-API. This guarantees that even if a pause is created during AI processing, the response will be blocked.
+### 2. Adicionar Medicina do Trabalho na Secao 7
 
-Additionally, add a pause check before calling the AI as a redundant safety net.
+Na lista de motivos para encaminhar para humano (linhas 319-326), adicionar:
 
-## Changes to `supabase/functions/zapi-webhook/index.ts`
-
-### 1. Add second pause check AFTER AI response, BEFORE sending
-
-After line 583 (where `aiResponse` and `humanHandoff` are extracted) and before sending the response (line 645), add:
-
-```typescript
-// SECOND PAUSE CHECK: Verify pause wasn't created while AI was processing
-const isPausedAfterAI = await shouldPauseClara(supabase, phone);
-if (isPausedAfterAI) {
-  console.log("PAUSE DETECTED AFTER AI PROCESSING for:", phone);
-  console.log("   - AI response will NOT be sent");
-  console.log("   - Secretary intervened during AI processing");
-  return new Response(
-    JSON.stringify({ 
-      success: true, 
-      claraPaused: true, 
-      reason: "pause_detected_after_ai" 
-    }),
-    { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-  );
-}
+```
+- Medicina do Trabalho (ver Secao 1A)
 ```
 
-This check covers:
-- Race conditions where the secretary replies while the AI is generating a response
-- Cases where a handoff was opened during AI processing
+### 3. Atualizar descricao da tool `encaminhar_humano`
 
-### 2. Add pause check in the handoff block too
+Na definicao da ferramenta (linha 1122-1123), incluir Medicina do Trabalho na descricao:
 
-Before sending the handoff notification message (line 587+), also check if a manual pause was created to avoid sending duplicate/conflicting messages.
-
-## Summary of all pause checkpoints after fix
-
-| Checkpoint | Location | Purpose |
-|-----------|----------|---------|
-| 1. fromMe detection | Line 325 | Creates pause + hard return for secretary messages |
-| 2. Before AI call | Line 528 | Blocks processing if pause already exists |
-| 3. After AI response | NEW | Catches pauses created during AI processing (race condition fix) |
-
-## File to modify
-
-| File | Change |
-|------|--------|
-| `supabase/functions/zapi-webhook/index.ts` | Add second `shouldPauseClara` check after AI response, before sending via Z-API |
-
-## Expected behavior after fix
-
-```text
-Timeline (race condition - FIXED):
-
-Patient msg webhook       Secretary msg webhook
-    |                           |
-    v                           |
- Check pause -> NO              |
-    |                           |
-    v                           v
- Call AI (takes 3-5s)     Create auto-pause
-    |                           |
-    v                           v
- Check pause -> YES!          Return OK
-    |
-    v
- BLOCK response (return)
+```
+"Encaminha para atendente humano. Usar para: convonio, desconto,
+item sem preco, pedido explicito, duvida clinica, TROCA DE
+HORARIO ou REAGENDAMENTO, MEDICINA DO TRABALHO."
 ```
 
-Clara will remain completely silent during the pause period and will only resume after the pause expires (1 hour) or manual resolution.
+## Resumo das alteracoes
+
+| Arquivo | Alteracao |
+|---------|-----------|
+| `supabase/functions/chat-atendimento/index.ts` | Remover bloco solto (linhas 53-62), criar secao 1A numerada, adicionar Med. do Trabalho na secao 7, atualizar descricao da tool |
+
+## Resultado esperado
+
+- A IA tratara Medicina do Trabalho como regra de alta prioridade (secao numerada)
+- A secao 7 tera referencia cruzada, eliminando a inconsistencia
+- A tool `encaminhar_humano` sera acionada corretamente para esses casos
+- O termo "assistencial" nao causara mais falsos positivos
+
