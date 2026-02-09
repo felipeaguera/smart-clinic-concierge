@@ -56,11 +56,14 @@ async function getOrMapLidToPhone(
 // ============================================================
 function extractPhoneFromPayload(body: any): string | null {
   // Lista de campos onde o telefone pode estar
+  // CORREÇÃO: NÃO fazer strip de @lid do chatId - isso criava "telefones falsos"
+  // (números lid sem sufixo que parecem válidos mas não são telefones reais)
   const sources = [
     body.phone,
     body.from?.replace("@c.us", ""),
     body.to?.replace("@c.us", ""),
-    body.chatId?.replace("@c.us", "").replace("@lid", ""),
+    // chatId com @c.us é telefone real, mas com @lid NÃO é - não incluir
+    body.chatId?.includes("@c.us") ? body.chatId.replace("@c.us", "") : null,
     body.chat?.phone,
     body.participant?.replace("@c.us", ""),
   ];
@@ -507,7 +510,30 @@ Deno.serve(async (req) => {
     }
 
     // From here on, handle inbound messages from patients (fromMe = false)
-    const phone = rawPhone;
+    let phone = rawPhone;
+    
+    // ============================================================
+    // CORREÇÃO: Se phone parece ser um lid numérico (não tem @, mas também
+    // não é um telefone real), tentar resolver via mapeamento
+    // ============================================================
+    const inboundChatLid = body.chatLid || body.chatId || null;
+    if (phone && !phone.includes("@") && inboundChatLid?.includes("@lid")) {
+      // phone pode ser um lid numérico falso - verificar via mapeamento
+      const mappedPhone = await getOrMapLidToPhone(supabase, inboundChatLid, phone);
+      if (mappedPhone && mappedPhone !== phone) {
+        console.log("📞 Phone corrigido via lid mapping:", phone, "->", mappedPhone);
+        phone = mappedPhone;
+      }
+    } else if (!phone || phone.includes("@")) {
+      // phone inválido - tentar resolver
+      if (inboundChatLid?.includes("@lid")) {
+        const mappedPhone = await getOrMapLidToPhone(supabase, inboundChatLid);
+        if (mappedPhone) {
+          console.log("📞 Phone resolvido de @lid:", inboundChatLid, "->", mappedPhone);
+          phone = mappedPhone;
+        }
+      }
+    }
     
     // Ignore old messages or history sync
     if (body.isOld || body.isFromHistory || body.waitingMessage) {
@@ -522,8 +548,8 @@ Deno.serve(async (req) => {
     const messageTimestamp = body.momment || body.timestamp;
     if (messageTimestamp) {
       const msgTime = new Date(messageTimestamp).getTime();
-      const now = Date.now();
-      const twoMinutesAgo = now - (2 * 60 * 1000);
+      const now2 = Date.now();
+      const twoMinutesAgo = now2 - (2 * 60 * 1000);
       
       if (msgTime < twoMinutesAgo) {
         console.log("Ignoring old message (> 2 minutes)");
@@ -545,10 +571,9 @@ Deno.serve(async (req) => {
     // ============================================================
     // CORREÇÃO: Criar mapeamento lid → phone em mensagens inbound
     // ============================================================
-    const inboundLid = body.chatLid || body.chatId;
-    if (inboundLid?.includes("@lid") && phone && !phone.includes("@")) {
+    if (inboundChatLid?.includes("@lid") && phone && !phone.includes("@")) {
       console.log("📝 Mapeando @lid para telefone real em mensagem inbound");
-      await getOrMapLidToPhone(supabase, inboundLid, phone);
+      await getOrMapLidToPhone(supabase, inboundChatLid, phone);
     }
 
     // Check for duplicate message (idempotency)
@@ -569,17 +594,43 @@ Deno.serve(async (req) => {
     }
 
     // Save inbound message to context table
-    await supabase.from("whatsapp_messages").insert({
+    const { data: savedMsg } = await supabase.from("whatsapp_messages").insert({
       phone,
       provider_message_id: messageId,
       direction: "inbound",
       content: text,
       source: "patient",
-    });
+    }).select("id, created_at").single();
+
+    // ============================================================
+    // MESSAGE COALESCING (DEBOUNCE): Esperar 2 segundos e verificar
+    // se há mensagens MAIS NOVAS do mesmo telefone. Se sim, abortar -
+    // a instância mais recente processará tudo com contexto completo.
+    // Isso evita boas-vindas duplicadas em rajadas de mensagens.
+    // ============================================================
+    console.log("⏳ Coalescing: aguardando 2s para verificar rajada de mensagens...");
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    if (savedMsg?.created_at) {
+      const { data: newerMessages } = await supabase
+        .from("whatsapp_messages")
+        .select("id")
+        .eq("phone", phone)
+        .eq("direction", "inbound")
+        .gt("created_at", savedMsg.created_at)
+        .limit(1);
+      
+      if (newerMessages && newerMessages.length > 0) {
+        console.log("⏭️ Coalescing: mensagem mais nova encontrada, abortando (a mais recente processará)");
+        return new Response(
+          JSON.stringify({ success: true, ignored: true, reason: "coalesced" }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
+    console.log("✅ Coalescing: esta é a mensagem mais recente, processando...");
 
     // Check if Clara should be paused (handoff open OR auto-pause active)
-    // CORREÇÃO DEFINITIVA: Verificar por phone E por chatLid
-    const inboundChatLid = body.chatLid || body.chatId || null;
     const isPaused = await shouldPauseClara(supabase, phone, inboundChatLid);
     if (isPaused) {
       console.log("⏸️ CLARA PAUSADA para telefone:", phone, "chatLid:", inboundChatLid);
@@ -741,11 +792,12 @@ Deno.serve(async (req) => {
         }
       }
       
-      // Create handoff entry
+      // Create handoff entry (incluir chat_lid para verificação redundante de pausa)
       await supabase.from("human_handoff_queue").insert({
         phone,
         patient_name: senderName,
         status: "open",
+        chat_lid: inboundChatLid || null,
       });
 
       return new Response(
