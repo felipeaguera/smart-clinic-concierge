@@ -81,11 +81,45 @@ Deno.serve(async (req) => {
     const diaSemana = dateObj.getDay()
     console.log('Dia da semana:', diaSemana, `(data: ${data})`)
 
-    // 2) Buscar TODOS os médicos ativos
-    const { data: doctors, error: doctorsError } = await supabase
-      .from('doctors')
-      .select('id, nome, especialidade')
-      .eq('ativo', true)
+    // 2) Buscar médicos conforme vínculo do exam_type
+    let doctors: any[] = []
+    let doctorsError: any = null
+
+    if (examType.doctor_id) {
+      // Exame vinculado a médico específico (ex: Ecocardiograma → só Dr. Antônio)
+      const result = await supabase
+        .from('doctors')
+        .select('id, nome, especialidade')
+        .eq('id', examType.doctor_id)
+        .eq('ativo', true)
+      doctors = result.data || []
+      doctorsError = result.error
+    } else {
+      // Exame genérico → buscar todos os médicos ativos EXCETO especialistas exclusivos
+      // Especialistas exclusivos = médicos vinculados a outro exam_type da mesma categoria
+      const { data: exclusiveExams } = await supabase
+        .from('exam_types')
+        .select('doctor_id')
+        .eq('categoria', examType.categoria)
+        .not('doctor_id', 'is', null)
+
+      const exclusiveIds = (exclusiveExams || [])
+        .map((e: any) => e.doctor_id)
+        .filter((id: string) => !!id)
+
+      let query = supabase
+        .from('doctors')
+        .select('id, nome, especialidade')
+        .eq('ativo', true)
+
+      if (exclusiveIds.length > 0) {
+        query = query.not('id', 'in', `(${exclusiveIds.join(',')})`)
+      }
+
+      const result = await query
+      doctors = result.data || []
+      doctorsError = result.error
+    }
 
     if (doctorsError || !doctors || doctors.length === 0) {
       console.error('Erro ao buscar médicos:', doctorsError)
