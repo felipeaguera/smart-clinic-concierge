@@ -1,35 +1,41 @@
 
 
-# Remover Dr. Klauber e encaminhar ginecologia/obstetrícia para humano
+# Vincular Ecocardiograma ao Dr. Antônio + Filtro bidirecional
 
-## Alterações em `supabase/functions/chat-atendimento/index.ts`
+## Problema
 
-### 1. Nova regra inviolável (após seção 1A, ~linha 69)
+Hoje a função `agenda-disponibilidade-categoria` busca **todos** os médicos ativos para qualquer ultrassom. Precisamos de dois filtros:
 
-Adicionar seção **1B. GINECOLOGIA / OBSTETRÍCIA / DR. KLAUBER** com regras idênticas à medicina do trabalho:
+1. **Ecocardiograma** → mostrar **somente** Dr. Antônio Calvilho
+2. **Outros ultrassons** → **não** mostrar Dr. Antônio Calvilho
 
-- Palavras-chave: Dr. Klauber, ginecologia, ginecologista, obstetrícia, obstetra, preventivo ginecológico, pré-natal, papanicolau
-- Ao detectar → confirmar com UMA pergunta → chamar `encaminhar_humano` com motivo "Ginecologia/Obstetrícia"
-- NÃO agendar, NÃO buscar disponibilidade, NÃO informar preços
+## Alterações
 
-### 2. Remover referências ao Dr. Klauber
+### 1. Vincular no banco de dados
+UPDATE `exam_types` SET `doctor_id` = `'2ea9f66f-...'` WHERE `id` = `'7a3630c4-...'` (ECOCARDIOGRAMA)
 
-- **Linha 138**: Trocar exemplo "quero com Dr. Klauber" por "quero com Dr. Felipe"
-- **Linha 404**: Remover exemplo do Dr. Klauber, substituir por outro médico
+### 2. Ajustar `agenda-disponibilidade-categoria/index.ts` (linhas 84-88)
 
-### 3. Remover/ajustar upsell obstétrico (linhas 143-170)
+Lógica atual:
+```
+Busca TODOS os médicos ativos
+```
 
-Como obstetrícia agora vai para humano, a seção de **Upsell Obstétrico** (seção 3) deve ser removida ou convertida em instrução de encaminhamento. Se o paciente pedir ultrassom obstétrico → encaminhar para humano junto com ginecologia.
+Nova lógica:
+```text
+Se examType.doctor_id existe:
+  → buscar APENAS esse médico (caso do Ecocardiograma)
+Senão:
+  → buscar todos os médicos ativos
+  → EXCLUIR médicos que são "especialistas exclusivos"
+    (ou seja, que têm algum exam_type da mesma categoria
+     vinculado a eles via doctor_id)
+```
 
-### 4. Ajustar exemplos de consulta ginecológica (linhas 134-135)
+Isso garante que o Dr. Antônio:
+- **Aparece** quando o paciente busca Ecocardiograma
+- **Não aparece** quando busca qualquer outro ultrassom
 
-Remover exemplo "consulta gineco" / "Consulta Ginecológica" da seção de desambiguação, já que agora isso vai para humano.
-
-### 5. Atualizar descrição da tool `encaminhar_humano` (linha 1138)
-
-Adicionar "GINECOLOGIA, OBSTETRÍCIA, DR. KLAUBER" à lista de motivos.
-
-### Resultado
-
-Clara não agenda, não busca horários, não informa preços para nada relacionado ao Dr. Klauber, ginecologia ou obstetrícia — encaminha direto para humano.
+### 3. Mesma lógica no `agenda-disponibilidade/index.ts`
+Verificar se essa função também precisa do filtro (ela é usada para consultas com médico específico, então provavelmente já está OK).
 
